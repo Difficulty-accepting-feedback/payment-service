@@ -31,7 +31,7 @@ public class PaymentJpaEntity {
 	@Column(nullable = false)
 	private Long orderId;
 
-	@Column(nullable = false)
+	@Column(unique = true)
 	private String paymentKey;
 
 	private Long billingKey;
