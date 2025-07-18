@@ -2,7 +2,7 @@ package com.grow.payment_service.payment.infra.persistence.entity;
 
 import java.time.LocalDateTime;
 
-import com.grow.payment_service.payment.domain.enums.PayStatus;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;

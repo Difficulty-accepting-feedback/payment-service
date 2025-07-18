@@ -1,8 +1,8 @@
 package com.grow.payment_service.payment.domain.model;
 
-import com.grow.payment_service.payment.domain.enums.CancelReason;
-import com.grow.payment_service.payment.domain.enums.FailureReason;
-import com.grow.payment_service.payment.domain.enums.PayStatus;
+import com.grow.payment_service.payment.domain.model.enums.CancelReason;
+import com.grow.payment_service.payment.domain.model.enums.FailureReason;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 
 import lombok.Getter;
 
