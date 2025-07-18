@@ -2,7 +2,7 @@ package com.grow.payment_service.payment.domain.model;
 
 import java.time.LocalDateTime;
 
-import com.grow.payment_service.payment.domain.enums.PayStatus;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 
 import lombok.Getter;
 

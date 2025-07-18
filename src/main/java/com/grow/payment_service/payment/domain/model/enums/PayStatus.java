@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.domain.enums;
+package com.grow.payment_service.payment.domain.model.enums;
 
 public enum PayStatus {
 	READY("결제 요청 전송 전"),
