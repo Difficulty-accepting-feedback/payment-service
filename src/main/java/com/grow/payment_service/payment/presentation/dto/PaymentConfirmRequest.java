@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @NoArgsConstructor
-public class ConfirmPaymentRequest {
+public class PaymentConfirmRequest {
 	private String paymentKey;
 	private String orderId;
 	private int amount;
