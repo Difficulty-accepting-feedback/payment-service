@@ -57,55 +57,20 @@ public class Payment {
 		);
 	}
 
-	public Payment markInProgress() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.IN_PROGRESS, method, null, null);
+	public Payment transitionTo(PayStatus nextStatus) {
+		if (!this.payStatus.canTransitionTo(nextStatus)) {
+			throw new IllegalStateException(
+				this.payStatus + " → " + nextStatus + " 전이 불가"
+			);
+		}
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, nextStatus, method,
+			this.failureReason, this.cancelReason
+		);
 	}
 
-	public Payment markWaitingForDeposit() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.WAITING_FOR_DEPOSIT, method, null, null);
-	}
-
-	public Payment markDone() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.DONE, method, null, null);
-	}
-
-	public Payment markAutoBillingReady() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.AUTO_BILLING_READY, method, null, null);
-	}
-
-	public Payment markAutoBillingPrepared() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.AUTO_BILLING_PREPARED, method, null, null);
-	}
-
-	public Payment markAutoBillingApproved() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.AUTO_BILLING_APPROVED, method, null, null);
-	}
-
-	public Payment markAutoBillingFailed(FailureReason failureReason) {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.AUTO_BILLING_FAILED, method, failureReason, null);
-	}
-
-	public Payment markAborted(FailureReason reason) {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.ABORTED, method, reason, null);
-	}
-
-	public Payment markExpired() {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.EXPIRED, method, null, null);
-	}
-
-	public Payment markFailed(FailureReason reason) {
-		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
-			customerKey, totalAmount, PayStatus.FAILED, method, reason, null);
-	}
 
 	public static Payment of(Long paymentId, Long memberId, Long planId, Long orderId,
 		String paymentKey, Long billingKey, String customerKey,

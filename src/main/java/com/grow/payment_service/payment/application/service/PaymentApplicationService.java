@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.infra.paymentprovider.TossException;
@@ -70,7 +71,7 @@ public class PaymentApplicationService {
 			.orElseThrow(() -> new TossException("orderId에 해당하는 결제 내역이 없습니다: " + orderId));
 
 		// 상태 변경
-		payment = payment.markDone();
+		payment = payment.transitionTo(PayStatus.DONE);
 		payment = paymentRepository.save(payment);
 
 		// 히스토리 저장
