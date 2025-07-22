@@ -4,12 +4,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
+import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
+import com.grow.payment_service.payment.infra.paymentprovider.TossCancelResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.TossException;
 import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
 
@@ -82,5 +85,50 @@ public class PaymentApplicationService {
 		));
 
 		return payment.getPaymentId();
+	}
+
+	@Transactional
+	public PaymentCancelResponse cancelPayment(
+		String paymentKey,
+		String orderIdStr,
+		int cancelAmount,
+		CancelReason reason
+	) {
+		// Toss API로 취소 요청
+		TossCancelResponse tossRes = tossClient.cancelPayment(
+			paymentKey,
+			reason.name(),
+			cancelAmount,
+			"사용자 요청 취소"
+		);
+
+		// DB에서 결제 조회
+		Long orderId = Long.parseLong(orderIdStr);
+		Payment payment = paymentRepository.findByOrderId(orderId)
+			.orElseThrow(() -> new TossException("orderId에 해당하는 결제 내역이 없습니다: " + orderId));
+
+		// 도메인 취소 요청 -> 저장 -> 히스토리
+		payment = payment.requestCancel(reason);
+		payment = paymentRepository.save(payment);
+		historyRepository.save(PaymentHistory.create(
+			payment.getPaymentId(),
+			payment.getPayStatus(),
+			"취소 요청"
+		));
+
+		// 도메인 취소 완료 -> 저장 -> 히스토리
+		payment = payment.completeCancel();
+		payment = paymentRepository.save(payment);
+		historyRepository.save(PaymentHistory.create(
+			payment.getPaymentId(),
+			payment.getPayStatus(),
+			"취소 완료"
+		));
+
+		//  최종 응답 반환
+		return new PaymentCancelResponse(
+			payment.getPaymentId(),
+			payment.getPayStatus().name()
+		);
 	}
 }

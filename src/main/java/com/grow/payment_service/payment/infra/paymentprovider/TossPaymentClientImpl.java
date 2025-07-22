@@ -76,6 +76,35 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.block();
 	}
 
+	@Override
+	public TossCancelResponse cancelPayment(
+		String paymentKey,
+		String cancelReason,
+		int cancelAmount,
+		String cancelReasonDetail
+	) {
+		WebClient client = webClientBuilder
+			.baseUrl(baseUrl)
+			.defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + encodeKey(secretKey))
+			.build();
+
+		return client.post()
+			.uri("/v1/payments/{paymentKey}/cancel", paymentKey)
+			.bodyValue(Map.of(
+				"cancelReason",       cancelReason,
+				"cancelAmount",       cancelAmount,
+				"cancelReasonDetail", cancelReasonDetail
+			))
+			.retrieve()
+			.onStatus(HttpStatusCode::isError, resp ->
+				resp.bodyToMono(String.class)
+					.flatMap(body -> Mono.error(new TossException("토스 취소 실패: " + body)))
+			)
+			.bodyToMono(TossCancelResponse.class)
+			.block();
+	}
+
+
 	private static String encodeKey(String key) {
 		return Base64.getEncoder()
 			.encodeToString((key + ":").getBytes(StandardCharsets.UTF_8));
