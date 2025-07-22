@@ -5,5 +5,17 @@ public interface TossPaymentClient {
 	TossInitResponse initPayment(String orderId, int amount, String orderName, String successUrl, String failUrl);
 
 	// 결제 승인
-	TossPaymentResponse confirmPayment(String paymentKey, String orderId, int amount);
+	TossPaymentResponse confirmPayment(
+		String paymentKey,
+		String orderId,
+		int amount
+	);
+
+	// 결제 취소
+	TossCancelResponse cancelPayment(
+		String paymentKey,
+		String cancelReason,
+		int cancelAmount,
+		String cancelReasonDetail
+	);
 }
