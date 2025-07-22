@@ -89,7 +89,7 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.build();
 
 		return client.post()
-			.uri("/v1/payments/{paymentKey}/cancel", paymentKey)
+			.uri("/payments/{paymentKey}/cancel", paymentKey)
 			.bodyValue(Map.of(
 				"cancelReason",       cancelReason,
 				"cancelAmount",       cancelAmount,

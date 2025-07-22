@@ -17,7 +17,9 @@ import com.grow.payment_service.payment.infra.paymentprovider.TossException;
 import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentApplicationService {
@@ -101,6 +103,7 @@ public class PaymentApplicationService {
 			cancelAmount,
 			"사용자 요청 취소"
 		);
+		log.info("cancelPayment response: {}", tossRes);
 
 		// DB에서 결제 조회
 		Long orderId = Long.parseLong(orderIdStr);
