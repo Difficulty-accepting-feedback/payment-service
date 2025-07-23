@@ -104,6 +104,39 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.block();
 	}
 
+	@Override
+	public TossVirtualAccountResponse createVirtualAccount(
+		String orderId,
+		int amount,
+		String orderName,
+		String customerName,
+		String bankCode,
+		int validHours
+	) {
+		WebClient client = webClientBuilder
+			.baseUrl(baseUrl)   // ${toss.base-url} 은 반드시 "https://api.tosspayments.com/v1" 으로만
+			.defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + encodeKey(secretKey))
+			.build();
+
+		return client.post()
+			.uri("/virtual-accounts")
+			.bodyValue(Map.of(
+				"orderId",      orderId,
+				"amount",       amount,
+				"orderName",    orderName,
+				"customerName", customerName,
+				"bank",         bankCode,
+				"validHours",   validHours
+			))
+			.retrieve()
+			.onStatus(HttpStatusCode::isError, resp ->
+				resp.bodyToMono(String.class)
+					.flatMap(body -> Mono.error(new TossException("토스 가상계좌 발급 실패: " + body)))
+			)
+			.bodyToMono(TossVirtualAccountResponse.class)
+			.block();
+	}
+
 
 	private static String encodeKey(String key) {
 		return Base64.getEncoder()

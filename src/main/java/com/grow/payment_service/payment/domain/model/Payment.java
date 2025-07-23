@@ -1,5 +1,7 @@
 package com.grow.payment_service.payment.domain.model;
 
+import static com.grow.payment_service.payment.domain.model.enums.PayStatus.*;
+
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
@@ -74,7 +76,7 @@ public class Payment {
 
 	/** 취소 요청 상태로 전이, cancelReason 세팅 */
 	public Payment requestCancel(CancelReason reason) {
-		if (!this.payStatus.canTransitionTo(PayStatus.CANCEL_REQUESTED)) {
+		if (!this.payStatus.canTransitionTo(CANCEL_REQUESTED)) {
 			throw new IllegalStateException(payStatus + "에서 취소 요청 전이 불가");
 		}
 		return new Payment(
@@ -87,7 +89,7 @@ public class Payment {
 
 	/** 취소 완료 상태로 전이 */
 	public Payment completeCancel() {
-		if (!this.payStatus.canTransitionTo(PayStatus.CANCELLED)) {
+		if (!this.payStatus.canTransitionTo(CANCELLED)) {
 			throw new IllegalStateException(payStatus + "에서 취소 완료 전이 불가");
 		}
 		return new Payment(
@@ -105,5 +107,20 @@ public class Payment {
 		FailureReason failureReason, CancelReason cancelReason) {
 		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
 			customerKey, totalAmount, payStatus, method, failureReason, cancelReason);
+	}
+
+	/**
+	 * 가상계좌 발급 후 대기 상태 전이
+	 */
+	public Payment issueVirtualAccount() {
+		if (!this.payStatus.canTransitionTo(WAITING_FOR_DEPOSIT)) {
+			throw new IllegalStateException(payStatus + " 에서 대기 상태 전이 불가");
+		}
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, WAITING_FOR_DEPOSIT, method,
+			failureReason, cancelReason
+		);
 	}
 }
