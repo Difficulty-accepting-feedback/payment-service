@@ -1,5 +1,7 @@
 package com.grow.payment_service.payment.application.service;
 
+import java.util.UUID;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -203,5 +205,26 @@ public class PaymentApplicationService {
 		paymentRepository.save(payment);
 
 		return new PaymentConfirmResponse(payment.getPaymentId(), payment.getPayStatus().name());
+	}
+
+	// 테스트용 빌링키 발급 상태 전이 메서드
+	@Transactional
+	public void testTransitionToReady(Long orderId, String billingKey) {
+		// 주문 조회
+		Payment payment = paymentRepository.findByOrderId(orderId)
+			.orElseThrow(() -> new IllegalStateException("테스트용 주문이 없습니다: " + orderId));
+
+		// 도메인 상태 전이 (registerBillingKey → AUTO_BILLING_READY)
+		payment = payment.registerBillingKey(billingKey);
+		paymentRepository.save(payment);
+
+		// 히스토리 기록
+		historyRepository.save(
+			PaymentHistory.create(
+				payment.getPaymentId(),
+				payment.getPayStatus(),
+				"테스트용 빌링키 전이"
+			)
+		);
 	}
 }

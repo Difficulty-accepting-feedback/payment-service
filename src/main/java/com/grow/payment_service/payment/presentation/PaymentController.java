@@ -18,6 +18,7 @@ import com.grow.payment_service.payment.presentation.dto.PaymentAutoChargeReques
 import com.grow.payment_service.payment.presentation.dto.PaymentCancelRequest;
 import com.grow.payment_service.payment.presentation.dto.PaymentConfirmRequest;
 import com.grow.payment_service.payment.presentation.dto.PaymentIssueBillingKeyRequest;
+import com.grow.payment_service.payment.presentation.dto.PaymentTestBillingReadyRequest;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -101,5 +102,15 @@ public class PaymentController {
 		return ResponseEntity.ok(
 			paymentService.chargeWithBillingKey(param)
 		);
+	}
+
+	/** 테스트용 빌링키 발급 상태 전이 */
+	@PostMapping("/billing/ready")
+	public ResponseEntity<Void> testBillingReady(@RequestBody PaymentTestBillingReadyRequest req) {
+		paymentService.testTransitionToReady(
+			req.getOrderId(),
+			req.getBillingKey()
+		);
+		return ResponseEntity.ok().build();
 	}
 }
