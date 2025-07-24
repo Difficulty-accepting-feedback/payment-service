@@ -34,7 +34,7 @@ public class PaymentJpaEntity {
 	@Column(unique = true)
 	private String paymentKey;
 
-	private Long billingKey;
+	private String billingKey;
 
 	private String customerKey;
 

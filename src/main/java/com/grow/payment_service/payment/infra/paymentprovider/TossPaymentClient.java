@@ -18,4 +18,20 @@ public interface TossPaymentClient {
 		int cancelAmount,
 		String cancelReasonDetail
 	);
+
+	/** 빌링키 발급 요청 */
+	TossBillingAuthResponse issueBillingKey(String authKey, String customerKey);
+
+	/** 자동결제 요청 */
+	TossBillingChargeResponse chargeWithBillingKey(
+		String billingKey,
+		String customerKey,
+		int amount,
+		String orderId,
+		String orderName,
+		String customerEmail,
+		String customerName,
+		Integer taxFreeAmount,
+		Integer taxExemptionAmount
+	);
 }
