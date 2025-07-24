@@ -18,14 +18,4 @@ public interface TossPaymentClient {
 		int cancelAmount,
 		String cancelReasonDetail
 	);
-
-	/** 가상계좌 발급 요청 */
-	TossVirtualAccountResponse createVirtualAccount(
-		String orderId,
-		int amount,
-		String orderName,
-		String customerName,
-		String bankCode,
-		int validHours
-	);
 }

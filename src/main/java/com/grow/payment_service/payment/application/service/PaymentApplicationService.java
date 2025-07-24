@@ -1,17 +1,10 @@
 package com.grow.payment_service.payment.application.service;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
-import com.grow.payment_service.payment.presentation.dto.PaymentVirtualAccountRequest;
-import com.grow.payment_service.payment.application.dto.PaymentVirtualAccountResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
@@ -21,7 +14,6 @@ import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.infra.paymentprovider.TossCancelResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.TossException;
 import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
-import com.grow.payment_service.payment.infra.paymentprovider.TossVirtualAccountResponse;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -136,39 +128,6 @@ public class PaymentApplicationService {
 		return new PaymentCancelResponse(
 			payment.getPaymentId(),
 			payment.getPayStatus().name()
-		);
-	}
-
-	/**
-	 * 가상계좌 발급 요청
-	 */
-	@Transactional
-	public PaymentVirtualAccountResponse createVirtualAccount(PaymentVirtualAccountRequest req) {
-		// 서버에서 고정으로 168시간(7일) 설정
-		TossVirtualAccountResponse tossRes = tossClient.createVirtualAccount(
-			req.getOrderId(),
-			req.getAmount(),
-			req.getOrderName(),
-			req.getCustomerName(),
-			req.getBankCode(),
-			168
-		);
-
-		// 도메인 전이, 저장
-		Payment payment = paymentRepository.findByOrderId(Long.parseLong(req.getOrderId()))
-			.orElseThrow(() -> new RuntimeException("주문 없음: " + req.getOrderId()));
-
-		payment = payment.issueVirtualAccount();
-		paymentRepository.save(payment);
-		historyRepository.save(PaymentHistory.create(
-			payment.getPaymentId(), payment.getPayStatus(), "가상계좌 발급"
-		));
-
-		return new PaymentVirtualAccountResponse(
-			tossRes.getOrderId(),
-			tossRes.getAccountNumber(),
-			tossRes.getBank(),
-			tossRes.getValidHours()
 		);
 	}
 }

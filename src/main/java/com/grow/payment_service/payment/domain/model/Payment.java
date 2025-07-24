@@ -108,19 +108,4 @@ public class Payment {
 		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,
 			customerKey, totalAmount, payStatus, method, failureReason, cancelReason);
 	}
-
-	/**
-	 * 가상계좌 발급 후 대기 상태 전이
-	 */
-	public Payment issueVirtualAccount() {
-		if (!this.payStatus.canTransitionTo(WAITING_FOR_DEPOSIT)) {
-			throw new IllegalStateException(payStatus + " 에서 대기 상태 전이 불가");
-		}
-		return new Payment(
-			paymentId, memberId, planId, orderId,
-			paymentKey, billingKey, customerKey,
-			totalAmount, WAITING_FOR_DEPOSIT, method,
-			failureReason, cancelReason
-		);
-	}
 }

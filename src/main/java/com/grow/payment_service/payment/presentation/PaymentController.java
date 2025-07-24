@@ -9,11 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
-import com.grow.payment_service.payment.application.dto.PaymentVirtualAccountResponse;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
 import com.grow.payment_service.payment.presentation.dto.PaymentCancelRequest;
 import com.grow.payment_service.payment.presentation.dto.PaymentConfirmRequest;
-import com.grow.payment_service.payment.presentation.dto.PaymentVirtualAccountRequest;
 
 import lombok.RequiredArgsConstructor;
 
@@ -56,15 +54,5 @@ public class PaymentController {
 			req.getCancelReason()
 		);
 		return ResponseEntity.ok(res);
-	}
-
-	/** 가상계좌 발급 */
-	@PostMapping("/virtual-account")
-	public ResponseEntity<PaymentVirtualAccountResponse> createVirtualAccount(
-		@RequestBody PaymentVirtualAccountRequest req
-	) {
-		return ResponseEntity.ok(
-			paymentService.createVirtualAccount(req)
-		);
 	}
 }
