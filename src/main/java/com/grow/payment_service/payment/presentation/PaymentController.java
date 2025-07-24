@@ -70,7 +70,7 @@ public class PaymentController {
 		@Valid @RequestBody PaymentIssueBillingKeyRequest req
 	) {
 		// Presentation → Application DTO 변환
-		var param = PaymentIssueBillingKeyParam.builder()
+		PaymentIssueBillingKeyParam param = PaymentIssueBillingKeyParam.builder()
 			.orderId(req.getOrderId())
 			.authKey(req.getAuthKey())
 			.customerKey(req.getCustomerKey())
@@ -87,7 +87,7 @@ public class PaymentController {
 		@Valid @RequestBody PaymentAutoChargeRequest req
 	) {
 		// Presentation → Application DTO 변환
-		var param = PaymentAutoChargeParam.builder()
+		PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
 			.billingKey(req.getBillingKey())
 			.customerKey(req.getCustomerKey())
 			.amount(req.getAmount())
