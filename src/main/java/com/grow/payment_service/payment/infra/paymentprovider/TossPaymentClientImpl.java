@@ -104,6 +104,48 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.block();
 	}
 
+	@Override
+	public TossBillingAuthResponse issueBillingKey(String authKey, String customerKey) {
+		return webClientBuilder.baseUrl(baseUrl)
+			.defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + encodeKey(secretKey))
+			.build()
+			.post().uri("/billing/authorizations/issue")
+			.bodyValue(Map.of("authKey", authKey, "customerKey", customerKey))
+			.retrieve().onStatus(HttpStatusCode::isError, resp ->
+				resp.bodyToMono(String.class)
+					.flatMap(body -> Mono.error(new TossException("빌링키 발급 실패: " + body)))
+			)
+			.bodyToMono(TossBillingAuthResponse.class).block();
+	}
+
+	@Override
+	public TossBillingChargeResponse chargeWithBillingKey(
+		String billingKey, String customerKey, int amount,
+		String orderId, String orderName,
+		String customerEmail, String customerName,
+		Integer taxFreeAmount, Integer taxExemptionAmount
+	) {
+		return webClientBuilder.baseUrl(baseUrl)
+			.defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + encodeKey(secretKey))
+			.build()
+			.post().uri("/billing/{billingKey}", billingKey)
+			.bodyValue(Map.of(
+				"customerKey", customerKey,
+				"amount", amount,
+				"orderId", orderId,
+				"orderName", orderName,
+				"customerEmail", customerEmail,
+				"customerName", customerName,
+				"taxFreeAmount", taxFreeAmount,
+				"taxExemptionAmount", taxExemptionAmount
+			))
+			.retrieve().onStatus(HttpStatusCode::isError, resp ->
+				resp.bodyToMono(String.class)
+					.flatMap(body -> Mono.error(new TossException("자동결제 승인 실패: " + body)))
+			)
+			.bodyToMono(TossBillingChargeResponse.class).block();
+	}
+
 
 	private static String encodeKey(String key) {
 		return Base64.getEncoder()

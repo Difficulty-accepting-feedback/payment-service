@@ -1,5 +1,7 @@
 package com.grow.payment_service.payment.domain.model;
 
+import static com.grow.payment_service.payment.domain.model.enums.PayStatus.*;
+
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
@@ -13,7 +15,7 @@ public class Payment {
 	private final Long planId;
 	private final Long orderId;
 	private final String paymentKey;
-	private final Long billingKey;
+	private final String billingKey;
 	private final String customerKey;
 	private final Long totalAmount;
 	private final PayStatus payStatus;
@@ -21,7 +23,7 @@ public class Payment {
 	private final FailureReason failureReason;
 	private final CancelReason cancelReason;
 
-	public Payment(Long paymentId, Long memberId, Long planId, Long orderId, String paymentKey, Long billingKey,
+	public Payment(Long paymentId, Long memberId, Long planId, Long orderId, String paymentKey, String billingKey,
 			String customerKey, Long totalAmount, PayStatus payStatus, String method, FailureReason failureReason,
 			CancelReason cancelReason) {
 		this.paymentId = paymentId;
@@ -39,7 +41,7 @@ public class Payment {
 	}
 
 	public static Payment create(Long memberId, Long planId, Long orderId,
-		String paymentKey, Long billingKey, String customerKey,
+		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, String method) {
 		return new Payment(
 			null,
@@ -74,7 +76,7 @@ public class Payment {
 
 	/** 취소 요청 상태로 전이, cancelReason 세팅 */
 	public Payment requestCancel(CancelReason reason) {
-		if (!this.payStatus.canTransitionTo(PayStatus.CANCEL_REQUESTED)) {
+		if (!this.payStatus.canTransitionTo(CANCEL_REQUESTED)) {
 			throw new IllegalStateException(payStatus + "에서 취소 요청 전이 불가");
 		}
 		return new Payment(
@@ -87,7 +89,7 @@ public class Payment {
 
 	/** 취소 완료 상태로 전이 */
 	public Payment completeCancel() {
-		if (!this.payStatus.canTransitionTo(PayStatus.CANCELLED)) {
+		if (!this.payStatus.canTransitionTo(CANCELLED)) {
 			throw new IllegalStateException(payStatus + "에서 취소 완료 전이 불가");
 		}
 		return new Payment(
@@ -98,9 +100,45 @@ public class Payment {
 		);
 	}
 
+	/** 빌링키 등록 후 상태 전이 */
+	public Payment registerBillingKey(String billingKey) {
+		if (!this.payStatus.canTransitionTo(AUTO_BILLING_READY))
+			throw new IllegalStateException(payStatus + "에서 자동결제 준비 상태 전이 불가");
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, PayStatus.AUTO_BILLING_READY,
+			method, failureReason, cancelReason
+		);
+	}
+
+	/** 자동결제 승인 후 상태 전이 */
+	public Payment approveAutoBilling() {
+		if (!this.payStatus.canTransitionTo(AUTO_BILLING_APPROVED))
+			throw new IllegalStateException(payStatus + "에서 자동결제 승인 상태 전이 불가");
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, PayStatus.AUTO_BILLING_APPROVED,
+			method, failureReason, cancelReason
+		);
+	}
+
+	/** 자동결제 실패 시 상태 전이 */
+	public Payment failAutoBilling(FailureReason reason) {
+		if (!this.payStatus.canTransitionTo(AUTO_BILLING_FAILED))
+			throw new IllegalStateException(payStatus + "에서 자동결제 실패 상태 전이 불가");
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, PayStatus.AUTO_BILLING_FAILED,
+			method, reason, cancelReason
+		);
+	}
+
 
 	public static Payment of(Long paymentId, Long memberId, Long planId, Long orderId,
-		String paymentKey, Long billingKey, String customerKey,
+		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, PayStatus payStatus, String method,
 		FailureReason failureReason, CancelReason cancelReason) {
 		return new Payment(paymentId, memberId, planId, orderId, paymentKey, billingKey,

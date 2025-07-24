@@ -1,20 +1,30 @@
 package com.grow.payment_service.payment.application.service;
 
-import org.springframework.beans.factory.annotation.Value;
+import java.util.UUID;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
+import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
+import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
+import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
+import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
+import com.grow.payment_service.payment.infra.paymentprovider.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.TossCancelResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.TossException;
 import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
+import com.grow.payment_service.payment.presentation.dto.PaymentAutoChargeRequest;
+import com.grow.payment_service.payment.presentation.dto.PaymentIssueBillingKeyRequest;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,9 +37,6 @@ public class PaymentApplicationService {
 	private final TossPaymentClient tossClient;  // confirm() 만 사용
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
-
-	@Value("${toss.client-key}")
-	private String clientKey;
 
 	private static final String SUCCESS_URL = "http://localhost:8080/confirm"; // 임시 값
 	private static final String FAIL_URL    = "http://localhost:8080/confirm?fail"; // 임시 값
@@ -132,6 +139,92 @@ public class PaymentApplicationService {
 		return new PaymentCancelResponse(
 			payment.getPaymentId(),
 			payment.getPayStatus().name()
+		);
+	}
+
+	/** 빌링키 발급 */
+	@Transactional
+	public PaymentIssueBillingKeyResponse issueBillingKey(PaymentIssueBillingKeyParam param) {
+		// 토스에 authKey, customerKey 전송
+		TossBillingAuthResponse tossRes = tossClient.issueBillingKey(
+			param.getAuthKey(), param.getCustomerKey()
+		);
+
+		// orderId 조회
+		Payment payment = paymentRepository.findByOrderId(param.getOrderId())
+			.orElseThrow(() -> new TossException("주문 없음: " + param.getOrderId()));
+
+		// 도메인 상태 전이
+		payment = payment.registerBillingKey(tossRes.getBillingKey());
+		paymentRepository.save(payment);
+		historyRepository.save(PaymentHistory.create(
+			payment.getPaymentId(),
+			payment.getPayStatus(),
+			"자동결제 빌링키 등록"
+		));
+
+		return new PaymentIssueBillingKeyResponse(tossRes.getBillingKey());
+	}
+
+	/** 자동결제 승인 */
+	@Transactional
+	public PaymentConfirmResponse chargeWithBillingKey(PaymentAutoChargeParam param) {
+		// 토스에 빌링키 결제 요청
+		TossBillingChargeResponse tossRes = tossClient.chargeWithBillingKey(
+			param.getBillingKey(),
+			param.getCustomerKey(),
+			param.getAmount(),
+			param.getOrderId(),
+			param.getOrderName(),
+			param.getCustomerEmail(),
+			param.getCustomerName(),
+			param.getTaxFreeAmount(),
+			param.getTaxExemptionAmount()
+		);
+
+		// orderId로 결제 내역 조회
+		Payment payment = paymentRepository.findByOrderId(Long.parseLong(tossRes.getOrderId()))
+			.orElseThrow(() -> new TossException("주문 없음: " + tossRes.getOrderId()));
+
+		// 상태 전이 및 히스토리 기록
+		if ("DONE".equals(tossRes.getStatus())) {
+			payment = payment.approveAutoBilling();
+			historyRepository.save(PaymentHistory.create(
+				payment.getPaymentId(),
+				payment.getPayStatus(),
+				"자동결제 승인 완료"
+			));
+		} else {
+			payment = payment.failAutoBilling(FailureReason.UNKNOWN);
+			historyRepository.save(PaymentHistory.create(
+				payment.getPaymentId(),
+				payment.getPayStatus(),
+				"자동결제 승인 실패"
+			));
+		}
+		paymentRepository.save(payment);
+
+		return new PaymentConfirmResponse(payment.getPaymentId(), payment.getPayStatus().name());
+	}
+
+	// 테스트용 빌링키 발급 상태 전이 메서드
+	@Transactional
+	public void testTransitionToReady(Long orderId, String billingKey) {
+		// 주문 조회
+		Payment payment = paymentRepository.findByOrderId(orderId)
+			.orElseThrow(() -> new IllegalStateException("테스트용 주문이 없습니다: " + orderId));
+
+		// 도메인 상태 전이 (registerBillingKey → AUTO_BILLING_READY)
+		payment = payment.registerBillingKey(billingKey);
+		paymentRepository.save(payment);
+
+		// 히스토리 기록
+		historyRepository.save(
+			PaymentHistory.create(
+				payment.getPaymentId(),
+				payment.getPayStatus(),
+				"테스트용 빌링키 전이"
+			)
 		);
 	}
 }

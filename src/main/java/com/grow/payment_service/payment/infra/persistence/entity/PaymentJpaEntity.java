@@ -28,13 +28,13 @@ public class PaymentJpaEntity {
 	@Column(nullable = false)
 	private Long planId;
 
-	@Column(nullable = false)
+	@Column(nullable = false, unique = true)
 	private Long orderId;
 
 	@Column(unique = true)
 	private String paymentKey;
 
-	private Long billingKey;
+	private String billingKey;
 
 	private String customerKey;
 
