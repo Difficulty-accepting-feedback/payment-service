@@ -28,6 +28,7 @@ public class QuartzConfig {
 				.withIdentity("monthlyAutoChargeTrigger")
 			.withSchedule(CronScheduleBuilder
 				.cronSchedule("0 0 0 1 * ?")
+			)
 				.build();
 	}
 }
