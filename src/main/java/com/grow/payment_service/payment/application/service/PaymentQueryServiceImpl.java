@@ -54,5 +54,40 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 			historyResponses
 		);
 	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<PaymentDetailResponse> getPaymentsByMemberId(Long memberId) {
+		List<Payment> payments = paymentRepository.findAllByMemberId(memberId);
+
+
+
+		return payments.stream()
+		// 결제 내역을 조회하고, 각 결제에 대한 기록을 조회하여 응답 DTO로 변환
+			.map(payment -> {
+				List<PaymentHistory> histories =
+					paymentHistoryRepository.findByPaymentId(payment.getPaymentId());
+
+				List<PaymentHistoryResponse> historyResponses = histories.stream()
+					.map(h -> new PaymentHistoryResponse(
+						h.getStatus().name(),
+						h.getChangedAt(),
+						h.getReasonDetail()
+					))
+					.collect(Collectors.toList());
+
+				return new PaymentDetailResponse(
+					payment.getPaymentId(),
+					payment.getMemberId(),
+					payment.getPlanId(),
+					payment.getOrderId(),
+					payment.getPayStatus().name(),
+					payment.getMethod(),
+					payment.getTotalAmount(),
+					historyResponses
+				);
+			})
+			.toList();
+	}
 	
 }

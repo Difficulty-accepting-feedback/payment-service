@@ -1,5 +1,6 @@
 package com.grow.payment_service.payment.infra.persistence.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.stereotype.Repository;
@@ -33,5 +34,13 @@ public class PaymentRepositoryImpl implements PaymentRepository {
 	public Optional<Payment> findByOrderId(Long orderId) {
 		return paymentJpaRepository.findByOrderId(orderId)
 			.map(PaymentMapper::toDomain);
+	}
+
+	@Override
+	public List<Payment> findAllByMemberId(Long memberId) {
+		return paymentJpaRepository.findAllByMemberId(memberId)
+			.stream()
+			.map(PaymentMapper::toDomain)
+			.toList();
 	}
 }
