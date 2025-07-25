@@ -11,7 +11,7 @@ public class PaymentDetailResponse {
 	private final Long paymentId;
 	private final Long memberId;
 	private final Long planId;
-	private final Long orderId;
+	private final String orderId;
 	private final String payStatus;
 	private final String method;
 	private final Long totalAmount;

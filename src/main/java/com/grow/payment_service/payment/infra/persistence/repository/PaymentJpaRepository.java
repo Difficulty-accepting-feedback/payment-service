@@ -9,6 +9,6 @@ import com.grow.payment_service.payment.infra.persistence.entity.PaymentJpaEntit
 
 public interface PaymentJpaRepository
 	extends JpaRepository<PaymentJpaEntity, Long> {
-	Optional<PaymentJpaEntity> findByOrderId(Long orderId);
+	Optional<PaymentJpaEntity> findByOrderId(String orderId);
 	List<PaymentJpaEntity> findAllByMemberId(Long memberId);
 }

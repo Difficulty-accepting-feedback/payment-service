@@ -28,8 +28,8 @@ public class PaymentJpaEntity {
 	@Column(nullable = false)
 	private Long planId;
 
-	@Column(nullable = false, unique = true)
-	private Long orderId;
+	@Column(nullable = false, unique = true, length = 30)
+	private String orderId;
 
 	@Column(unique = true)
 	private String paymentKey;

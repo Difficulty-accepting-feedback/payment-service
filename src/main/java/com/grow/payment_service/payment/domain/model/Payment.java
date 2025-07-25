@@ -13,7 +13,7 @@ public class Payment {
 	private final Long paymentId;
 	private final Long memberId;
 	private final Long planId;
-	private final Long orderId;
+	private final String orderId;
 	private final String paymentKey;
 	private final String billingKey;
 	private final String customerKey;
@@ -23,7 +23,7 @@ public class Payment {
 	private final FailureReason failureReason;
 	private final CancelReason cancelReason;
 
-	public Payment(Long paymentId, Long memberId, Long planId, Long orderId, String paymentKey, String billingKey,
+	public Payment(Long paymentId, Long memberId, Long planId, String orderId, String paymentKey, String billingKey,
 			String customerKey, Long totalAmount, PayStatus payStatus, String method, FailureReason failureReason,
 			CancelReason cancelReason) {
 		this.paymentId = paymentId;
@@ -40,7 +40,7 @@ public class Payment {
 		this.cancelReason = cancelReason;
 	}
 
-	public static Payment create(Long memberId, Long planId, Long orderId,
+	public static Payment create(Long memberId, Long planId, String orderId,
 		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, String method) {
 		return new Payment(
@@ -137,7 +137,7 @@ public class Payment {
 	}
 
 
-	public static Payment of(Long paymentId, Long memberId, Long planId, Long orderId,
+	public static Payment of(Long paymentId, Long memberId, Long planId, String orderId,
 		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, PayStatus payStatus, String method,
 		FailureReason failureReason, CancelReason cancelReason) {
