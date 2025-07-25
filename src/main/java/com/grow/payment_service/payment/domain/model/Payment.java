@@ -137,6 +137,24 @@ public class Payment {
 	}
 
 
+    /** 자동결제 중단 -> 빌링 키 제거 */
+	public Payment clearBillingKey() {
+		return new Payment(
+			this.paymentId,
+			this.memberId,
+			this.planId,
+			this.orderId,
+			this.paymentKey,
+			null,               // billingKey 제거
+			this.customerKey,
+			this.totalAmount,
+			this.payStatus,
+			this.method,
+			this.failureReason,
+			this.cancelReason
+		);
+	}
+
 	public static Payment of(Long paymentId, Long memberId, Long planId, String orderId,
 		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, PayStatus payStatus, String method,

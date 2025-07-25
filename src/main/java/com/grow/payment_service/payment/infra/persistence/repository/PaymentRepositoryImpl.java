@@ -2,10 +2,12 @@ package com.grow.payment_service.payment.infra.persistence.repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Repository;
 
 import com.grow.payment_service.payment.domain.model.Payment;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.infra.persistence.mapper.PaymentMapper;
 
@@ -40,6 +42,13 @@ public class PaymentRepositoryImpl implements PaymentRepository {
 	public List<Payment> findAllByMemberId(Long memberId) {
 		return paymentJpaRepository.findAllByMemberId(memberId)
 			.stream()
+			.map(PaymentMapper::toDomain)
+			.toList();
+	}
+
+	@Override
+	public List<Payment> findAllByPayStatusAndBillingKeyIsNotNull(PayStatus payStatus) {
+		return paymentJpaRepository.findAllByPayStatusAndBillingKeyIsNotNull(payStatus).stream()
 			.map(PaymentMapper::toDomain)
 			.toList();
 	}
