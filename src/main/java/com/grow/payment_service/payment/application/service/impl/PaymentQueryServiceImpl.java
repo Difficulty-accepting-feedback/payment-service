@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.application.service;
+package com.grow.payment_service.payment.application.service.impl;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.grow.payment_service.payment.application.dto.PaymentDetailResponse;
 import com.grow.payment_service.payment.application.dto.PaymentHistoryResponse;
+import com.grow.payment_service.payment.application.service.PaymentQueryService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;

@@ -3,12 +3,13 @@ package com.grow.payment_service.payment.application.service;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.util.List;
 
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.service.impl.PaymentApplicationServiceImpl;
+import com.grow.payment_service.payment.application.service.impl.PaymentBatchServiceImpl;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
@@ -31,7 +32,8 @@ class PaymentBatchServiceImplTest {
 
 	@Mock PaymentRepository paymentRepository;
 	@Mock PaymentHistoryRepository historyRepository;
-	@Mock PaymentApplicationService paymentService;
+	@Mock
+	PaymentApplicationServiceImpl paymentService;
 	@Mock TossPaymentClient tossClient;
 
 	@InjectMocks

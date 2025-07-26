@@ -1,10 +1,11 @@
-package com.grow.payment_service.payment.application.service;
+package com.grow.payment_service.payment.application.service.impl;
 
 import java.util.List;
 import org.springframework.stereotype.Service;
 
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.service.PaymentBatchService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
@@ -21,7 +22,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
-	private final PaymentApplicationService paymentService;
+	private final PaymentApplicationServiceImpl paymentService;
 	private final TossPaymentClient tossClient;
 
 	@Override

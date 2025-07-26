@@ -13,7 +13,7 @@ import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
-import com.grow.payment_service.payment.application.service.PaymentApplicationService;
+import com.grow.payment_service.payment.application.service.impl.PaymentApplicationServiceImpl;
 import com.grow.payment_service.payment.presentation.dto.PaymentAutoChargeRequest;
 import com.grow.payment_service.payment.presentation.dto.PaymentCancelRequest;
 import com.grow.payment_service.payment.presentation.dto.PaymentConfirmRequest;
@@ -28,7 +28,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PaymentController {
 
-	private final PaymentApplicationService paymentService;
+	private final PaymentApplicationServiceImpl paymentService;
 
 	/** 주문 정보 생성 */
 	@PostMapping("/create")
