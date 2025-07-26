@@ -12,6 +12,7 @@ import lombok.Setter;
 public class PaymentTestBillingReadyRequest {
 	/** 테스트할 주문 ID */
 	private String orderId;
+
 	/** 테스트용으로 사용할 임의의 billingKey */
 	private String billingKey;
 }
