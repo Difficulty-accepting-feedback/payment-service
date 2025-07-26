@@ -8,7 +8,7 @@ import org.quartz.TriggerBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.grow.payment_service.payment.infra.scheduler.MonthlyAutoChargeJob;
+import com.grow.payment_service.payment.infra.batch.MonthlyAutoChargeJob;
 
 @Configuration
 public class QuartzConfig {

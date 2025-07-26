@@ -2,7 +2,7 @@ package com.grow.payment_service.payment.application.service;
 
 import java.util.List;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
@@ -17,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PaymentSchedulerServiceImpl implements PaymentSchedulerService {
+public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;

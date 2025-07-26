@@ -1,6 +1,6 @@
 package com.grow.payment_service.payment.application.service;
 
-public interface PaymentSchedulerService {
+public interface PaymentBatchService {
 	/** 매월 자동결제 처리 */
 	void processMonthlyAutoCharge();
 
