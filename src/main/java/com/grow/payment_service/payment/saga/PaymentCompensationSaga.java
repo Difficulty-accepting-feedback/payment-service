@@ -1,119 +1,67 @@
 package com.grow.payment_service.payment.saga;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import io.github.resilience4j.retry.annotation.Retry;
-
-import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
-import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
-import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
-import com.grow.payment_service.payment.application.service.PaymentApplicationService;
+import com.grow.payment_service.payment.application.dto.*;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
+import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
+import com.grow.payment_service.payment.infra.paymentprovider.*;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentCompensationSaga {
 
-	private final PaymentApplicationService paymentService;
+	private final PaymentGatewayPort gatewayPort;
+	private final RetryablePersistenceService retryableService;
 
-	// 결제 승인 -> DB 재시도 -> 보상(취소)
-	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverConfirm")
-	@Transactional
-	public Long confirmWithCompensation(
-		String paymentKey,
-		String orderId,
-		int amount
-	) {
-		return paymentService.confirmPayment(paymentKey, orderId, amount);
+	/**
+	 * 1) 토스 결제 승인 API 호출
+	 * 2) DB 저장(재시도 포함) → 실패 시 보상(자동 취소)
+	 */
+	public Long confirmWithCompensation(String paymentKey, String orderId, int amount) {
+		// 외부 결제 승인
+		gatewayPort.confirmPayment(paymentKey, orderId, amount);
+		// DB 저장 및 실패 시 보상 로직 실행
+		return retryableService.saveConfirmation(paymentKey, orderId, amount);
 	}
 
-	public Long recoverConfirm(
-		String paymentKey,
-		String orderId,
-		int amount,
-		Throwable throwable
-	) {
-		log.error("[SAGA-Recover] 결제 승인 실패, 보상 취소 실행: orderId={}", orderId, throwable);
-		try {
-			paymentService.cancelPayment(
-				paymentKey,
-				orderId,
-				amount,
-				CancelReason.SYSTEM_ERROR
-			);
-			log.info("[SAGA-Recover] 보상 결제 취소 완료: orderId={}", orderId);
-		} catch (Exception cancelEx) {
-			log.error("[SAGA-Recover] 보상 결제 취소 실패: orderId={}", orderId, cancelEx);
-		}
-		throw new IllegalStateException("결제 승인 재시도 -> 취소 처리되었습니다.", throwable);
+	/**
+	 * 1) 사용자 요청 결제 취소 API 호출
+	 * 2) DB 저장(재시도 포함)
+	 */
+	public PaymentCancelResponse cancelWithCompensation(
+		String paymentKey, String orderId, int amount, CancelReason reason) {
+		// 외부 결제 취소
+		gatewayPort.cancelPayment(paymentKey, reason.name(), amount, "사용자 요청 취소");
+		// DB 취소 기록 저장
+		return retryableService.saveCancellation(orderId, reason, amount);
 	}
 
-	// 빌링키 발급 -> DB 재시도 -> 알림
-	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverIssueKey")
-	@Transactional
-	public String issueKeyWithCompensation(PaymentIssueBillingKeyParam param) {
-		return paymentService.issueBillingKey(param).getBillingKey();
+	/**
+	 * 1) 토스 빌링키 발급 API 호출
+	 * 2) DB에 빌링키 저장(재시도 포함)
+	 */
+	public PaymentIssueBillingKeyResponse issueKeyWithCompensation(PaymentIssueBillingKeyParam param) {
+		// 외부 빌링키 발급
+		TossBillingAuthResponse toss = gatewayPort.issueBillingKey(param.getAuthKey(), param.getCustomerKey());
+		// DB에 발급된 키 저장
+		return retryableService.saveBillingKey(param.getOrderId(), toss.getBillingKey());
 	}
 
-	public String recoverIssueKey(
-		PaymentIssueBillingKeyParam param,
-		Throwable throwable
-	) {
-		log.error("[SAGA-Recover] 빌링키 발급 실패: orderId={}", param.getOrderId(), throwable);
-		throw new IllegalStateException("빌링키 발급 재시도 실패", throwable);
-	}
-
-	// 자동결제 승인 -> DB 재시도 -> 보상(자동결제 취소)
-	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverAutoCharge")
-	@Transactional
+	/**
+	 * 1) 토스 빌링키 자동결제 API 호출
+	 * 2) DB 승인 결과 저장(재시도 포함) → 실패 시 보상(자동 취소)
+	 */
 	public PaymentConfirmResponse autoChargeWithCompensation(PaymentAutoChargeParam param) {
-		return paymentService.chargeWithBillingKey(param);
-	}
-
-	public PaymentConfirmResponse recoverAutoCharge(
-		PaymentAutoChargeParam param,
-		Throwable throwable
-	) {
-		log.error("[SAGA-Recover] 자동결제 승인 실패, 보상 취소 실행: orderId={}", param.getOrderId(), throwable);
-		try {
-			paymentService.cancelPayment(
-				param.getBillingKey(),
-				param.getOrderId(),
-				param.getAmount(),
-				CancelReason.SYSTEM_ERROR
-			);
-			log.info("[SAGA-Recover] 자동결제 취소 보상 완료: orderId={}", param.getOrderId());
-		} catch (Exception cancelEx) {
-			log.error("[SAGA-Recover] 자동결제 취소 보상 실패: orderId={}", param.getOrderId(), cancelEx);
-		}
-		throw new IllegalStateException("자동결제 재시도 실패 -> 취소 처리되었습니다.", throwable);
-	}
-
-	// 사용자 직접 취소 -> DB 재시도 -> 알림
-	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancel")
-	@Transactional
-	public void cancelWithCompensation(
-		String paymentKey,
-		String orderId,
-		int amount,
-		CancelReason reason
-	) {
-		paymentService.cancelPayment(paymentKey, orderId, amount, reason);
-	}
-
-	public void recoverCancel(
-		String paymentKey,
-		String orderId,
-		int amount,
-		CancelReason reason,
-		Throwable throwable
-	) {
-		log.error("[SAGA-Recover] 취소 처리 실패: orderId={}", orderId, throwable);
-		throw new IllegalStateException("취소 처리 재시도 실패", throwable);
+		// 외부 자동결제 실행
+		TossBillingChargeResponse toss = gatewayPort.chargeWithBillingKey(
+			param.getBillingKey(), param.getCustomerKey(), param.getAmount(),
+			param.getOrderId(), param.getOrderName(), param.getCustomerEmail(),
+			param.getCustomerName(), param.getTaxFreeAmount(), param.getTaxExemptionAmount()
+		);
+		// DB 결과 저장 및 실패 시 보상 로직 실행
+		return retryableService.saveAutoCharge(param.getBillingKey(), param.getOrderId(), param.getAmount(), toss);
 	}
 }

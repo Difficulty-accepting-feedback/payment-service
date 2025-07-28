@@ -1,0 +1,127 @@
+package com.grow.payment_service.payment.saga;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import io.github.resilience4j.retry.annotation.Retry;
+
+import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
+import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
+import com.grow.payment_service.payment.domain.model.Payment;
+import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
+import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
+import com.grow.payment_service.payment.domain.model.enums.CancelReason;
+import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
+
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+public class RetryablePersistenceService {
+
+	private final PaymentPersistenceService persistenceService;
+	private final PaymentGatewayPort gatewayPort;
+
+	/**
+	 * 1) 결제 승인 정보를 DB에 저장
+	 * 2) 저장 실패 시 3회 재시도 -> recoverConfirm에서 보상(자동 취소) 실행
+	 */
+	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverConfirm")
+	@Transactional
+	public Long saveConfirmation(String paymentKey, String orderId, int amount) {
+		return persistenceService.savePaymentConfirmation(orderId);
+	}
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	protected Long recoverConfirm(String paymentKey, String orderId, int amount, Throwable t) {
+		// 외부 결제 보상 취소 요청
+		gatewayPort.cancelPayment(paymentKey, CancelReason.SYSTEM_ERROR.name(), amount, "보상 취소");
+
+		try {
+			// 내부 상태 강제 CANCELLED 처리
+			Payment payment = persistenceService.findByOrderId(orderId); // 새로 메서드 만들어야 함
+			Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR); // 도메인 메서드 추가
+			persistenceService.saveForceCancelledPayment(cancelled); // 새로 메서드 만들어야 함
+
+			// 히스토리 기록
+			persistenceService.saveHistory(
+				cancelled.getPaymentId(),
+				cancelled.getPayStatus(),
+				"보상 트랜잭션으로 강제 취소됨"
+			);
+
+		} catch (Exception ex) {
+			throw new IllegalStateException("보상 취소 실패", ex);
+		}
+
+		throw new IllegalStateException("결제 승인 보상(취소) 완료 - 원인: " + t.getMessage(), t);
+	}
+
+	/**
+	 * 1) 사용자 요청 결제 취소 내역을 DB에 저장
+	 * 2) 저장 실패 시 3회 재시도 -> recoverCancel에서 예외 전파
+	 */
+	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancel")
+	@Transactional
+	public PaymentCancelResponse saveCancellation(String orderId, CancelReason reason, int amount) {
+		return persistenceService.savePaymentCancellation(orderId, reason, amount);
+	}
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	protected PaymentCancelResponse recoverCancel(String orderId, CancelReason reason, int amount, Throwable t) {
+		try {
+			// 외부는 이미 결제 취소 완료된 상태이므로, 내부 상태 강제 전이
+			Payment payment = persistenceService.findByOrderId(orderId);
+			Payment cancelled = payment.forceCancel(reason);
+			persistenceService.saveForceCancelledPayment(cancelled); // REQUIRES_NEW
+			persistenceService.saveHistory(
+				cancelled.getPaymentId(),
+				cancelled.getPayStatus(),
+				"보상 트랜잭션(취소 실패)에 의한 강제 상태 전이"
+			);
+
+			return new PaymentCancelResponse(
+				cancelled.getPaymentId(),
+				cancelled.getPayStatus().name()
+			);
+		} catch (Exception ex) {
+			throw new IllegalStateException("보상 취소 실패 - 내부 상태 처리 중 예외", ex);
+		}
+	}
+
+	/**
+	 * 1) 자동결제 빌링키를 DB에 저장
+	 * 2) 저장 실패 시 3회 재시도 -> recoverIssueKey에서 예외 전파
+	 */
+	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverIssueKey")
+	@Transactional
+	public PaymentIssueBillingKeyResponse saveBillingKey(String orderId, String billingKey) {
+		return persistenceService.saveBillingKeyRegistration(orderId, billingKey);
+	}
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	protected PaymentIssueBillingKeyResponse recoverIssueKey(String orderId, String billingKey, Throwable t) {
+		// 빌링키 발급 실패 시 별도 취소 로직 없음
+		throw new IllegalStateException("빌링키 발급 DB저장 재시도 실패", t);
+	}
+
+	/**
+	 * 1) 자동결제 결과를 DB에 저장
+	 * 2) 저장 실패 시 3회 재시도 -> recoverAutoCharge에서 보상(자동 취소) 실행
+	 */
+	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverAutoCharge")
+	@Transactional
+	public PaymentConfirmResponse saveAutoCharge(
+		String billingKey, String orderId, int amount, TossBillingChargeResponse tossRes
+	) {
+		return persistenceService.saveAutoChargeResult(orderId, tossRes);
+	}
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	protected PaymentConfirmResponse recoverAutoCharge(
+		String billingKey, String orderId, int amount, TossBillingChargeResponse tossRes, Throwable t
+	) {
+		// 보상 트랜잭션: 자동결제 취소 처리
+		gatewayPort.cancelPayment(billingKey, CancelReason.SYSTEM_ERROR.name(), amount, "자동결제 보상 취소");
+		persistenceService.savePaymentCancellation(orderId, CancelReason.SYSTEM_ERROR, amount);
+		throw new IllegalStateException("자동결제 승인 보상(취소) 실패", t);
+	}
+}
