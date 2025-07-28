@@ -18,6 +18,7 @@ import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
+import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
 import com.grow.payment_service.payment.infra.paymentprovider.TossBillingAuthResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.TossCancelResponse;
@@ -34,9 +35,10 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PaymentApplicationService {
 
-	private final TossPaymentClient tossClient;  // confirm() 만 사용
+	private final TossPaymentClient tossClient;
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
+	private final OrderIdGenerator orderIdGenerator;
 
 	private static final String SUCCESS_URL = "http://localhost:8080/confirm"; // 임시 값
 	private static final String FAIL_URL    = "http://localhost:8080/confirm?fail"; // 임시 값
@@ -46,8 +48,12 @@ public class PaymentApplicationService {
 	 */
 	@Transactional
 	public PaymentInitResponse initPaymentData(
-		Long memberId, Long planId, Long orderId, int amount
+		Long memberId, Long planId, int amount
 	) {
+		// Redis를 이용해 고유 orderId 생성
+		String orderId = orderIdGenerator.generate(memberId);
+
+		// 도메인 객체 생성
 		Payment payment = Payment.create(
 			memberId, planId, orderId,
 			null, null,
@@ -56,12 +62,13 @@ public class PaymentApplicationService {
 			"CARD"
 		);
 		payment = paymentRepository.save(payment);
-		historyRepository.save(PaymentHistory.create(
-			payment.getPaymentId(), payment.getPayStatus(), "주문 생성"
-		));
+		historyRepository.save(
+			PaymentHistory.create(payment.getPaymentId(), payment.getPayStatus(), "주문 생성")
+		);
 
+		// 클라이언트 응답
 		return new PaymentInitResponse(
-			String.valueOf(orderId),
+			orderId,
 			amount,
 			"GROW Plan #" + orderId,
 			SUCCESS_URL + "?memberId=" + memberId + "&planId=" + planId,
@@ -78,9 +85,8 @@ public class PaymentApplicationService {
 		tossClient.confirmPayment(paymentKey, orderIdStr, amount);
 
 		// orderId 로 조회
-		Long orderId = Long.parseLong(orderIdStr);
-		Payment payment = paymentRepository.findByOrderId(orderId)
-			.orElseThrow(() -> new TossException("orderId에 해당하는 결제 내역이 없습니다: " + orderId));
+		Payment payment = paymentRepository.findByOrderId(orderIdStr)
+			.orElseThrow(() -> new TossException("orderId에 해당하는 결제 내역이 없습니다: " + orderIdStr));
 
 		// 상태 변경
 		payment = payment.transitionTo(PayStatus.DONE);
@@ -113,9 +119,8 @@ public class PaymentApplicationService {
 		log.info("cancelPayment response: {}", tossRes);
 
 		// DB에서 결제 조회
-		Long orderId = Long.parseLong(orderIdStr);
-		Payment payment = paymentRepository.findByOrderId(orderId)
-			.orElseThrow(() -> new TossException("orderId에 해당하는 결제 내역이 없습니다: " + orderId));
+		Payment payment = paymentRepository.findByOrderId(orderIdStr)
+			.orElseThrow(() -> new TossException("orderId에 해당하는 결제 내역이 없습니다: " + orderIdStr));
 
 		// 도메인 취소 요청 -> 저장 -> 히스토리
 		payment = payment.requestCancel(reason);
@@ -183,7 +188,7 @@ public class PaymentApplicationService {
 		);
 
 		// orderId로 결제 내역 조회
-		Payment payment = paymentRepository.findByOrderId(Long.parseLong(tossRes.getOrderId()))
+		Payment payment = paymentRepository.findByOrderId(tossRes.getOrderId())
 			.orElseThrow(() -> new TossException("주문 없음: " + tossRes.getOrderId()));
 
 		// 상태 전이 및 히스토리 기록
@@ -209,7 +214,7 @@ public class PaymentApplicationService {
 
 	// 테스트용 빌링키 발급 상태 전이 메서드
 	@Transactional
-	public void testTransitionToReady(Long orderId, String billingKey) {
+	public void testTransitionToReady(String orderId, String billingKey) {
 		// 주문 조회
 		Payment payment = paymentRepository.findByOrderId(orderId)
 			.orElseThrow(() -> new IllegalStateException("테스트용 주문이 없습니다: " + orderId));

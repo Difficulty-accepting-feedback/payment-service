@@ -2,6 +2,7 @@ package com.grow.payment_service.payment.infra.paymentprovider;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 
 import lombok.RequiredArgsConstructor;
@@ -125,25 +126,34 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 		String customerEmail, String customerName,
 		Integer taxFreeAmount, Integer taxExemptionAmount
 	) {
-		return webClientBuilder.baseUrl(baseUrl)
+		Map<String, Object> body = new HashMap<>();
+		body.put("customerKey",    customerKey);
+		body.put("amount",         amount);
+		body.put("orderId",        orderId);
+		body.put("orderName",      orderName);
+		body.put("customerEmail",  customerEmail);
+		body.put("customerName",   customerName);
+		if (taxFreeAmount != null) {
+			body.put("taxFreeAmount",      taxFreeAmount);
+		}
+		if (taxExemptionAmount != null) {
+			body.put("taxExemptionAmount", taxExemptionAmount);
+		}
+
+		return webClientBuilder
+			.baseUrl(baseUrl)
 			.defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + encodeKey(secretKey))
 			.build()
-			.post().uri("/billing/{billingKey}", billingKey)
-			.bodyValue(Map.of(
-				"customerKey", customerKey,
-				"amount", amount,
-				"orderId", orderId,
-				"orderName", orderName,
-				"customerEmail", customerEmail,
-				"customerName", customerName,
-				"taxFreeAmount", taxFreeAmount,
-				"taxExemptionAmount", taxExemptionAmount
-			))
-			.retrieve().onStatus(HttpStatusCode::isError, resp ->
+			.post()
+			.uri("/billing/{billingKey}", billingKey)
+			.bodyValue(body)
+			.retrieve()
+			.onStatus(HttpStatusCode::isError, resp ->
 				resp.bodyToMono(String.class)
-					.flatMap(body -> Mono.error(new TossException("자동결제 승인 실패: " + body)))
+					.flatMap(b -> Mono.error(new TossException("자동결제 승인 실패: " + b)))
 			)
-			.bodyToMono(TossBillingChargeResponse.class).block();
+			.bodyToMono(TossBillingChargeResponse.class)
+			.block();
 	}
 
 

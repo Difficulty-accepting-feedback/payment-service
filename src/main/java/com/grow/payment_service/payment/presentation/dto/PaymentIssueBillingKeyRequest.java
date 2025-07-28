@@ -8,7 +8,7 @@ import lombok.extern.jackson.Jacksonized;
 @Builder
 @Jacksonized
 public class PaymentIssueBillingKeyRequest {
-	private final Long orderId;
+	private final String orderId;
 	private final String authKey;
 	private final String customerKey;
 }

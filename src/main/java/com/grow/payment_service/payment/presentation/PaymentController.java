@@ -35,10 +35,9 @@ public class PaymentController {
 	public ResponseEntity<PaymentInitResponse> createPayment(
 		@RequestParam Long memberId,
 		@RequestParam Long planId,
-		@RequestParam Long orderId,
 		@RequestParam int amount
 	) {
-		PaymentInitResponse dto = paymentService.initPaymentData(memberId, planId, orderId, amount);
+		PaymentInitResponse dto = paymentService.initPaymentData(memberId, planId, amount);
 		return ResponseEntity.ok(dto);
 	}
 
