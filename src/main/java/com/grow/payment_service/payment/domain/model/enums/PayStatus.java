@@ -50,7 +50,8 @@ public enum PayStatus {
 				FAILED,
 				EXPIRED,
 				ABORTED,
-				AUTO_BILLING_READY
+				AUTO_BILLING_READY,
+				CANCEL_REQUESTED
 			)),
 			// IN_PROGRESS -> 승인 또는 실패·만료·중단
 			entry(IN_PROGRESS, EnumSet.of(

@@ -155,6 +155,16 @@ public class Payment {
 		);
 	}
 
+	/** 결제 승인 후 취소 상태 전이 */
+	public Payment forceCancel(CancelReason reason) {
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, PayStatus.CANCELLED,
+			method, failureReason, reason
+		);
+	}
+
 	public static Payment of(Long paymentId, Long memberId, Long planId, String orderId,
 		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, PayStatus payStatus, String method,
