@@ -3,7 +3,6 @@ package com.grow.payment_service.payment.application.service;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.util.List;
 
@@ -29,10 +28,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class PaymentBatchServiceImplTest {
 
-	@Mock PaymentRepository paymentRepository;
-	@Mock PaymentHistoryRepository historyRepository;
-	@Mock PaymentApplicationService paymentService;
-	@Mock TossPaymentClient tossClient;
+	@Mock
+	PaymentRepository paymentRepository;
+	@Mock
+	PaymentHistoryRepository historyRepository;
+	@Mock
+	PaymentApplicationService paymentService;
+	@Mock
+	TossPaymentClient tossClient;
 
 	@InjectMocks
 	PaymentBatchServiceImpl batchService;
