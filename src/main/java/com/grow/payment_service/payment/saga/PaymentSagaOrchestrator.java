@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
-public class PaymentCompensationSaga {
+public class PaymentSagaOrchestrator {
 
 	private final PaymentGatewayPort gatewayPort;
 	private final RetryablePersistenceService retryableService;

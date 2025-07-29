@@ -16,7 +16,7 @@ import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.saga.PaymentCompensationSaga;
+import com.grow.payment_service.payment.saga.PaymentSagaOrchestrator;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +31,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	private final OrderIdGenerator orderIdGenerator;
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
-	private final PaymentCompensationSaga paymentSaga;
+	private final PaymentSagaOrchestrator paymentSaga;
 
 	private static final String SUCCESS_URL = "http://localhost:8080/confirm"; // 임시 값
 	private static final String FAIL_URL    = "http://localhost:8080/confirm?fail";  // 임시 값
