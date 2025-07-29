@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import com.grow.payment_service.payment.domain.exception.DomainException;
+import com.grow.payment_service.payment.common.exception.DomainException;
 import com.grow.payment_service.payment.global.exception.message.MessageService;
 
 import jakarta.servlet.http.HttpServletRequest;
