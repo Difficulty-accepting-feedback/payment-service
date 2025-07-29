@@ -10,6 +10,7 @@ import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
@@ -40,9 +41,9 @@ public class RetryablePersistenceService {
 
 		try {
 			// 내부 상태 강제 CANCELLED 처리
-			Payment payment = persistenceService.findByOrderId(orderId); // 새로 메서드 만들어야 함
-			Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR); // 도메인 메서드 추가
-			persistenceService.saveForceCancelledPayment(cancelled); // 새로 메서드 만들어야 함
+			Payment payment = persistenceService.findByOrderId(orderId);
+			Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR);
+			persistenceService.saveForceCancelledPayment(cancelled);
 
 			// 히스토리 기록
 			persistenceService.saveHistory(
@@ -59,34 +60,65 @@ public class RetryablePersistenceService {
 	}
 
 	/**
-	 * 1) 사용자 요청 결제 취소 내역을 DB에 저장
-	 * 2) 저장 실패 시 3회 재시도 -> recoverCancel에서 예외 전파
+	 * 1) 사용자 요청 결제 취소 요청 내역을 DB에 저장
+	 * 2) 저장 실패 시 3회 재시도 -> recoverCancelRequest에서 보상 트랜잭션 실행
 	 */
-	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancel")
+	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancelRequest")
 	@Transactional
-	public PaymentCancelResponse saveCancellation(String orderId, CancelReason reason, int amount) {
-		return persistenceService.savePaymentCancellation(orderId, reason, amount);
+	public PaymentCancelResponse saveCancelRequest(
+		String paymentKey, String orderId, int amount, CancelReason reason
+	) {
+		return persistenceService.requestCancel(orderId, reason, amount);
 	}
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	protected PaymentCancelResponse recoverCancel(String orderId, CancelReason reason, int amount, Throwable t) {
-		try {
-			// 외부는 이미 결제 취소 완료된 상태이므로, 내부 상태 강제 전이
-			Payment payment = persistenceService.findByOrderId(orderId);
-			Payment cancelled = payment.forceCancel(reason);
-			persistenceService.saveForceCancelledPayment(cancelled); // REQUIRES_NEW
-			persistenceService.saveHistory(
-				cancelled.getPaymentId(),
-				cancelled.getPayStatus(),
-				"보상 트랜잭션(취소 실패)에 의한 강제 상태 전이"
-			);
+	protected PaymentCancelResponse recoverCancelRequest(
+		String paymentKey, String orderId, int amount, CancelReason reason, Throwable t
+	) {
+		// 보상 트랜잭션: 외부는 이미 cancel 완료 상태이므로 내부 강제 상태 전이
+		Payment payment = persistenceService.findByOrderId(orderId);
+		Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR);
+		persistenceService.saveForceCancelledPayment(cancelled);
+		persistenceService.saveHistory(
+			cancelled.getPaymentId(),
+			cancelled.getPayStatus(),
+			"보상 트랜잭션(취소 요청 저장 실패)에 의한 강제 상태 전이"
+		);
 
-			return new PaymentCancelResponse(
-				cancelled.getPaymentId(),
-				cancelled.getPayStatus().name()
+		return new PaymentCancelResponse(
+			cancelled.getPaymentId(),
+			cancelled.getPayStatus().name()
+		);
+	}
+
+	/**
+	 * 1) 사용자 요청 결제 취소 완료 내역을 DB에 저장
+	 * 2) 저장 실패 시 3회 재시도 -> recoverCancelComplete에서 보상 트랜잭션 실행
+	 */
+	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancelComplete")
+	@Transactional
+	public PaymentCancelResponse saveCancelComplete(String orderId) {
+		return persistenceService.completeCancel(orderId);
+	}
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	protected PaymentCancelResponse recoverCancelComplete(String orderId, Throwable t) {
+		// 보상 트랜잭션: 아직 CANCEL_REQUESTED 상태라면 강제로 완료 처리
+		Payment payment = persistenceService.findByOrderId(orderId);
+		if (payment.getPayStatus() == PayStatus.CANCEL_REQUESTED) {
+			Payment completed = payment.completeCancel();
+			persistenceService.saveForceCancelledPayment(completed);
+			persistenceService.saveHistory(
+				completed.getPaymentId(),
+				completed.getPayStatus(),
+				"보상 트랜잭션(취소 완료 저장 실패)에 의한 강제 완료"
 			);
-		} catch (Exception ex) {
-			throw new IllegalStateException("보상 취소 실패 - 내부 상태 처리 중 예외", ex);
+			return new PaymentCancelResponse(
+				completed.getPaymentId(),
+				completed.getPayStatus().name()
+			);
 		}
+		throw new IllegalStateException(
+			"보상 트랜잭션: 적절한 상태가 아닙니다 - " + payment.getPayStatus(), t
+		);
 	}
 
 	/**
@@ -120,8 +152,19 @@ public class RetryablePersistenceService {
 		String billingKey, String orderId, int amount, TossBillingChargeResponse tossRes, Throwable t
 	) {
 		// 보상 트랜잭션: 자동결제 취소 처리
-		gatewayPort.cancelPayment(billingKey, CancelReason.SYSTEM_ERROR.name(), amount, "자동결제 보상 취소");
-		persistenceService.savePaymentCancellation(orderId, CancelReason.SYSTEM_ERROR, amount);
+		gatewayPort.cancelPayment(
+			billingKey,
+			CancelReason.SYSTEM_ERROR.name(),
+			amount,
+			"자동결제 보상 취소"
+		);
+
+		// 취소 요청
+		persistenceService.requestCancel(orderId, CancelReason.SYSTEM_ERROR, amount);
+
+		// 취소 처리
+		persistenceService.completeCancel(orderId);
+
 		throw new IllegalStateException("자동결제 승인 보상(취소) 실패", t);
 	}
 }

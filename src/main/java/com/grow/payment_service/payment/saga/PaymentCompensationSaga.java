@@ -28,16 +28,21 @@ public class PaymentCompensationSaga {
 	}
 
 	/**
-	 * 1) 사용자 요청 결제 취소 API 호출
-	 * 2) DB 저장(재시도 포함)
+	 * 1) DB 저장(재시도 포함) - 취소 요청
+	 * 2) 사용자 요청 결제 취소 API 호출
+	 * 3) DB 저장(재시도 포함) - 취소 완료
 	 */
 	public PaymentCancelResponse cancelWithCompensation(
-		String paymentKey, String orderId, int amount, CancelReason reason) {
+		String paymentKey, String orderId, int amount, CancelReason reason
+	) {
+		// DB: 취소 요청 저장(리트라이 + 보상)
+		retryableService.saveCancelRequest(paymentKey, orderId, amount, reason);
 		// 외부 결제 취소
 		gatewayPort.cancelPayment(paymentKey, reason.name(), amount, "사용자 요청 취소");
-		// DB 취소 기록 저장
-		return retryableService.saveCancellation(orderId, reason, amount);
+		// DB: 취소 완료 저장(리트라이 + 보상)
+		return retryableService.saveCancelComplete(orderId);
 	}
+
 
 	/**
 	 * 1) 토스 빌링키 발급 API 호출

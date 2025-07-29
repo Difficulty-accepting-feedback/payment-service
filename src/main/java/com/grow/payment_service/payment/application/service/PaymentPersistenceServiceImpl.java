@@ -44,18 +44,22 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		return payment.getPaymentId();
 	}
 
-	/** 결제 취소 후 DB 저장 */
+	/** 결제 취소 요청 후 DB 저장 */
 	@Override
 	@Transactional
-	public PaymentCancelResponse savePaymentCancellation(
-		String orderId,
-		CancelReason reason,
-		int canceledAmount
-	) {
+	public PaymentCancelResponse requestCancel(String orderId, CancelReason reason, int amount) {
 		Payment payment = paymentRepository.findByOrderId(orderId)
 			.orElseThrow(() -> new TossException("orderId 없음: " + orderId));
+
+		// 이미 요청됐거나 완료된 경우 무시
+		if (payment.getPayStatus() == PayStatus.CANCEL_REQUESTED
+			|| payment.getPayStatus() == PayStatus.CANCELLED) {
+			return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
+		}
+
+		// 취소 요청 상태로 전이
 		payment = payment.requestCancel(reason);
-		payment = paymentRepository.save(payment);
+		paymentRepository.save(payment);
 		historyRepository.save(
 			PaymentHistory.create(
 				payment.getPaymentId(),
@@ -63,8 +67,24 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"취소 요청"
 			)
 		);
+		return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
+	}
+
+	/** 결제 취소 완료 후 DB 저장 */
+	@Override
+	@Transactional
+	public PaymentCancelResponse completeCancel(String orderId) {
+		Payment payment = paymentRepository.findByOrderId(orderId)
+			.orElseThrow(() -> new TossException("orderId 없음: " + orderId));
+
+		// 취소 요청 상태가 아니면 무시
+		if (payment.getPayStatus() != PayStatus.CANCEL_REQUESTED) {
+			return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
+		}
+
+		// 취소 완료 상태로 전이
 		payment = payment.completeCancel();
-		payment = paymentRepository.save(payment);
+		paymentRepository.save(payment);
 		historyRepository.save(
 			PaymentHistory.create(
 				payment.getPaymentId(),
@@ -72,6 +92,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"취소 완료"
 			)
 		);
+
 		return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
 	}
 

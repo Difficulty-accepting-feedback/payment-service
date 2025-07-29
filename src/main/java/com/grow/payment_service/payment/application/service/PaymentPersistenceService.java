@@ -14,8 +14,11 @@ public interface PaymentPersistenceService {
 	/** 결제 승인 후 DB 저장 */
 	Long savePaymentConfirmation(String orderId);
 
-	/** 결제 취소 후 DB 저장 */
-	PaymentCancelResponse savePaymentCancellation(String orderId, CancelReason reason, int canceledAmount);
+	/** 결제 취소 요청 후 DB 저장 */
+	PaymentCancelResponse requestCancel(String orderId, CancelReason reason, int amount);
+
+	/** 결제 취소 완료 후 DB 저장 */
+	PaymentCancelResponse completeCancel(String orderId);
 
 	/** 빌링키 등록 후 DB 저장 */
 	PaymentIssueBillingKeyResponse saveBillingKeyRegistration(String orderId, String billingKey);
