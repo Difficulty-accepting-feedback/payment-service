@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.grow.payment_service.payment.application.dto.PaymentDetailResponse;
 import com.grow.payment_service.payment.application.service.PaymentQueryService;
+import com.grow.payment_service.payment.global.dto.RsData;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,11 +23,12 @@ public class PaymentQueryController {
 
 	/** 회원의 결제 내역 조회 */
 	@GetMapping("/member")
-	public ResponseEntity<List<PaymentDetailResponse>> getPaymentsByMember(
+	public ResponseEntity<RsData<List<PaymentDetailResponse>>> getPaymentsByMember(
 		@RequestParam Long memberId
 	) {
+		List<PaymentDetailResponse> list = paymentQueryService.getPaymentsByMemberId(memberId);
 		return ResponseEntity.ok(
-			paymentQueryService.getPaymentsByMemberId(memberId)
+			new RsData<>("200", "결제 내역 조회 성공", list)
 		);
 	}
 }

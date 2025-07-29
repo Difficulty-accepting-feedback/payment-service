@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.grow.payment_service.payment.application.dto.*;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
+import com.grow.payment_service.payment.global.dto.RsData;
 import com.grow.payment_service.payment.presentation.dto.*;
 
 import jakarta.validation.Valid;
@@ -19,27 +20,33 @@ public class PaymentController {
 
 	/** 주문 정보 생성 */
 	@PostMapping("/create")
-	public ResponseEntity<PaymentInitResponse> createPayment(
+	public ResponseEntity<RsData<PaymentInitResponse>> createPayment(
 		@RequestParam Long memberId,
 		@RequestParam Long planId,
 		@RequestParam int amount
 	) {
 		PaymentInitResponse dto = paymentService.initPaymentData(memberId, planId, amount);
-		return ResponseEntity.ok(dto);
+		return ResponseEntity.ok(
+			new RsData<>("200", "주문 정보 생성 성공", dto)
+		);
 	}
 
 	/** 결제 승인 */
 	@PostMapping("/confirm")
-	public ResponseEntity<Long> confirmPayment(@RequestBody @Valid PaymentConfirmRequest req) {
+	public ResponseEntity<RsData<Long>> confirmPayment(
+		@RequestBody @Valid PaymentConfirmRequest req
+	) {
 		Long paymentId = paymentService.confirmPayment(
 			req.getPaymentKey(), req.getOrderId(), req.getAmount()
 		);
-		return ResponseEntity.ok(paymentId);
+		return ResponseEntity.ok(
+			new RsData<>("200", "결제 승인 성공", paymentId)
+		);
 	}
 
 	/** 결제 취소 */
 	@PostMapping("/cancel")
-	public ResponseEntity<PaymentCancelResponse> cancelPayment(
+	public ResponseEntity<RsData<PaymentCancelResponse>> cancelPayment(
 		@RequestBody @Valid PaymentCancelRequest req
 	) {
 		PaymentCancelResponse res = paymentService.cancelPayment(
@@ -48,12 +55,14 @@ public class PaymentController {
 			req.getCancelAmount(),
 			req.getCancelReason()
 		);
-		return ResponseEntity.ok(res);
+		return ResponseEntity.ok(
+			new RsData<>("200", "결제 취소 성공", res)
+		);
 	}
 
 	/** 자동결제 빌링키 발급 */
 	@PostMapping("/billing/issue")
-	public ResponseEntity<String> issueBillingKey(
+	public ResponseEntity<RsData<String>> issueBillingKey(
 		@Valid @RequestBody PaymentIssueBillingKeyRequest req
 	) {
 		PaymentIssueBillingKeyParam param = PaymentIssueBillingKeyParam.builder()
@@ -62,13 +71,17 @@ public class PaymentController {
 			.customerKey(req.getCustomerKey())
 			.build();
 
-		String billingKey = paymentService.issueBillingKey(param).getBillingKey();
-		return ResponseEntity.ok(billingKey);
+		String billingKey = paymentService.issueBillingKey(param)
+			.getBillingKey();
+
+		return ResponseEntity.ok(
+			new RsData<>("200", "빌링키 발급 성공", billingKey)
+		);
 	}
 
 	/** 자동결제 승인(빌링키 결제) */
 	@PostMapping("/billing/charge")
-	public ResponseEntity<PaymentConfirmResponse> chargeWithBillingKey(
+	public ResponseEntity<RsData<PaymentConfirmResponse>> chargeWithBillingKey(
 		@Valid @RequestBody PaymentAutoChargeRequest req
 	) {
 		PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
@@ -84,13 +97,20 @@ public class PaymentController {
 			.build();
 
 		PaymentConfirmResponse res = paymentService.chargeWithBillingKey(param);
-		return ResponseEntity.ok(res);
+
+		return ResponseEntity.ok(
+			new RsData<>("200", "자동결제 승인 성공", res)
+		);
 	}
 
 	/** 테스트용 빌링키 발급 상태 전이 */
 	@PostMapping("/billing/ready")
-	public ResponseEntity<Void> testBillingReady(@RequestBody PaymentTestBillingReadyRequest req) {
+	public ResponseEntity<RsData<Void>> testBillingReady(
+		@RequestBody PaymentTestBillingReadyRequest req
+	) {
 		paymentService.testTransitionToReady(req.getOrderId(), req.getBillingKey());
-		return ResponseEntity.ok().build();
+		return ResponseEntity.ok(
+			new RsData<>("200", "빌링키 준비 상태 전이 성공", null)
+		);
 	}
 }
