@@ -20,15 +20,6 @@ public class PaymentQueryController {
 
 	private final PaymentQueryService paymentQueryService;
 
-	/** 결제 내역 조회 */
-	@GetMapping("/history")
-	public ResponseEntity<PaymentDetailResponse> getPaymentDetail(
-		@RequestParam Long paymentId
-	) {
-		PaymentDetailResponse response = paymentQueryService.getPayment(paymentId);
-		return ResponseEntity.ok(response);
-	}
-
 	/** 회원의 결제 내역 조회 */
 	@GetMapping("/member")
 	public ResponseEntity<List<PaymentDetailResponse>> getPaymentsByMember(
