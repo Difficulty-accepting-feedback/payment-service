@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.infra.paymentprovider;
+package com.grow.payment_service.payment.global.exception;
 
 public class TossException extends RuntimeException {
 	public TossException(String message) {

@@ -9,7 +9,7 @@ import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyRe
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

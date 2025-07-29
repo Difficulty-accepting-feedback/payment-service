@@ -1,5 +1,11 @@
 package com.grow.payment_service.payment.infra.paymentprovider;
 
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossInitResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossPaymentResponse;
+
 public interface TossPaymentClient {
 	/** 결제 요청 */
 	TossInitResponse initPayment(String orderId, int amount, String orderName, String successUrl, String failUrl);

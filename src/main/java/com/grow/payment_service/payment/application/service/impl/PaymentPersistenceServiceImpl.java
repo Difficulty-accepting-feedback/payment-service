@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.application.service;
+package com.grow.payment_service.payment.application.service.impl;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
+import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
@@ -14,8 +15,8 @@ import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
-import com.grow.payment_service.payment.infra.paymentprovider.TossException;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.global.exception.TossException;
 
 import lombok.RequiredArgsConstructor;
 

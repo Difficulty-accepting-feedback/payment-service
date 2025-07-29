@@ -18,11 +18,11 @@ import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
-import com.grow.payment_service.payment.infra.paymentprovider.TossCancelResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResponse;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
 
 
 @SpringBootTest(classes = PaymentServiceApplication.class)
