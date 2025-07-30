@@ -12,6 +12,8 @@ import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
+import com.grow.payment_service.payment.global.exception.ErrorCode;
+import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,8 +26,11 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
 	private final PaymentApplicationService paymentService;
-	private final TossPaymentClient tossClient;
 
+	/**
+	 * 매월 자동결제 대상에 대해 실제 과금을 시도합니다.
+	 * 상태가 AUTO_BILLING_READY 인 결제만 처리
+	 */
 	@Override
 	public void processMonthlyAutoCharge() {
 		List<Payment> targets =
@@ -56,10 +61,17 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 			} catch (Exception ex) {
 				log.error("[자동결제 실패] 결제ID={}, 주문ID={}, 원인={}",
 					p.getPaymentId(), p.getOrderId(), ex.getMessage(), ex);
+				throw new PaymentApplicationException(
+					ErrorCode.BATCH_AUTO_CHARGE_ERROR, ex
+				);
 			}
 		}
 	}
 
+	/**
+	 * 특정 회원의 payment 객체에서 빌링키를 제거합니다.
+	 * 빌링키가 있는 결제만 처리
+	 */
 	@Override
 	public void removeBillingKeysForMember(Long memberId) {
 		List<Payment> list = paymentRepository.findAllByMemberId(memberId);
@@ -74,18 +86,25 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				log.info("[빌링키 제거 시작] 결제ID={}, 기존BillingKey={}",
 					p.getPaymentId(), p.getBillingKey());
 
-				Payment updated = p.clearBillingKey();
-				paymentRepository.save(updated);
-				historyRepository.save(
-					PaymentHistory.create(
-						updated.getPaymentId(),
-						updated.getPayStatus(),
-						"빌링키 제거"
-					)
-				);
-
-				log.info("[빌링키 제거 완료] 결제ID={}, billingKey=null 로 변경",
-					updated.getPaymentId());
+				try {
+					Payment updated = p.clearBillingKey();
+					paymentRepository.save(updated);
+					historyRepository.save(
+						PaymentHistory.create(
+							updated.getPaymentId(),
+							updated.getPayStatus(),
+							"빌링키 제거"
+						)
+					);
+					log.info("[빌링키 제거 완료] 결제ID={}, billingKey=null 로 변경",
+						updated.getPaymentId());
+				} catch (Exception ex) {
+					log.error("[빌링키 제거 실패] 결제ID={}, 원인={}",
+						p.getPaymentId(), ex.getMessage(), ex);
+					throw new PaymentApplicationException(
+						ErrorCode.BATCH_CLEAR_BILLINGKEY_ERROR, ex
+					);
+				}
 			}
 		}
 	}
