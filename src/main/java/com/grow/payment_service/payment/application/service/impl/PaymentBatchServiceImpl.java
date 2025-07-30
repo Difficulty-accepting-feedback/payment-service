@@ -9,6 +9,7 @@ import com.grow.payment_service.payment.application.service.PaymentApplicationSe
 import com.grow.payment_service.payment.application.service.PaymentBatchService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
+import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
@@ -107,5 +108,23 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				}
 			}
 		}
+	}
+
+	@Override
+	public void markAutoChargeFailedPermanently() {
+		// (예시) AUTO_BILLING_READY → AUTO_BILLING_FAILED 로 전이
+		List<Payment> targets = paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY);
+		for (Payment p : targets) {
+			Payment failed = p.failAutoBilling(FailureReason.RETRY_EXCEEDED);   // Domain 모델에 구현
+			paymentRepository.save(failed);
+			historyRepository.save(
+				PaymentHistory.create(
+					failed.getPaymentId(),
+					failed.getPayStatus(),
+					"자동 결제 실패 처리"
+				)
+			);
+		}
+		log.info("[자동결제] 5회 재시도 후 실패 상태 전이 완료: count={}", targets.size());
 	}
 }

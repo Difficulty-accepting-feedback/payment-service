@@ -135,7 +135,6 @@ public class Payment {
 		);
 	}
 
-
     /** 자동결제 중단 -> 빌링 키 제거 */
 	public Payment clearBillingKey() {
 		return new Payment(

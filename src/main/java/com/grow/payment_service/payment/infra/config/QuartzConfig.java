@@ -16,19 +16,21 @@ public class QuartzConfig {
 	@Bean
 	public JobDetail monthlyAutoChargeJobDetail() {
 		return JobBuilder.newJob(MonthlyAutoChargeJob.class)
-				.withIdentity("monthlyAutoChargeJob")
-				.storeDurably()
-				.build();
+			.withIdentity("monthlyAutoChargeJob")
+			.storeDurably()
+			.usingJobData("retryCount", 0)
+			.usingJobData("maxRetry", 5)
+			.build();
 	}
 
 	@Bean
 	public Trigger monthlyAutoChargeTrigger(JobDetail monthlyAutoChargeJobDetail) {
 		return TriggerBuilder.newTrigger()
-				.forJob(monthlyAutoChargeJobDetail)
-				.withIdentity("monthlyAutoChargeTrigger")
+			.forJob(monthlyAutoChargeJobDetail)
+			.withIdentity("monthlyAutoChargeTrigger")
 			.withSchedule(CronScheduleBuilder
 				.cronSchedule("0 0 0 1 * ?")
 			)
-				.build();
+			.build();
 	}
 }
