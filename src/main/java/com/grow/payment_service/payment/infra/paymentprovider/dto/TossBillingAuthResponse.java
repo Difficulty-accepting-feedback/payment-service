@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.infra.paymentprovider;
+package com.grow.payment_service.payment.infra.paymentprovider.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

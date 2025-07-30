@@ -11,7 +11,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+
+import com.grow.payment_service.payment.global.exception.ErrorCode;
+import com.grow.payment_service.payment.global.exception.TossException;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossInitResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossPaymentResponse;
+
 import reactor.core.publisher.Mono;
+
 @Component
 @RequiredArgsConstructor
 public class TossPaymentClientImpl implements TossPaymentClient {
@@ -24,6 +34,7 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 
 	private final WebClient.Builder webClientBuilder;
 
+	/** 결제 초기화 */
 	@Override
 	public TossInitResponse initPayment(
 		String orderId,
@@ -40,19 +51,25 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 		return client.post()
 			.uri("/payments")
 			.bodyValue(Map.of(
-				"method",    "CARD",
-				"orderId",   orderId,
-				"amount",    amount,
-				"orderName", orderName,
+				"method",     "CARD",
+				"orderId",    orderId,
+				"amount",     amount,
+				"orderName",  orderName,
 				"successUrl", successUrl,
 				"failUrl",    failUrl
 			))
 			.retrieve()
+			.onStatus(HttpStatusCode::isError, resp ->
+				resp.bodyToMono(String.class)
+					.flatMap(body -> Mono.error(
+						new TossException(ErrorCode.TOSS_API_ERROR, new RuntimeException(body))
+					))
+			)
 			.bodyToMono(TossInitResponse.class)
 			.block();
 	}
 
-
+	/** 결제 승인 */
 	@Override
 	public TossPaymentResponse confirmPayment(String paymentKey, String orderId, int amount) {
 		WebClient client = webClientBuilder
@@ -68,15 +85,17 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 				"amount",     amount
 			))
 			.retrieve()
-			// HttpStatusCode::isError 로 수정
 			.onStatus(HttpStatusCode::isError, resp ->
 				resp.bodyToMono(String.class)
-					.flatMap(body -> Mono.error(new TossException("토스 승인 실패: " + body)))
+					.flatMap(body -> Mono.error(
+						new TossException(ErrorCode.TOSS_API_ERROR, new RuntimeException(body))
+					))
 			)
 			.bodyToMono(TossPaymentResponse.class)
 			.block();
 	}
 
+	/** 결제 취소 */
 	@Override
 	public TossCancelResponse cancelPayment(
 		String paymentKey,
@@ -99,12 +118,15 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.retrieve()
 			.onStatus(HttpStatusCode::isError, resp ->
 				resp.bodyToMono(String.class)
-					.flatMap(body -> Mono.error(new TossException("토스 취소 실패: " + body)))
+					.flatMap(body -> Mono.error(
+						new TossException(ErrorCode.TOSS_API_ERROR, new RuntimeException(body))
+					))
 			)
 			.bodyToMono(TossCancelResponse.class)
 			.block();
 	}
 
+	/** 빌링키 발급 */
 	@Override
 	public TossBillingAuthResponse issueBillingKey(String authKey, String customerKey) {
 		return webClientBuilder.baseUrl(baseUrl)
@@ -112,19 +134,29 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.build()
 			.post().uri("/billing/authorizations/issue")
 			.bodyValue(Map.of("authKey", authKey, "customerKey", customerKey))
-			.retrieve().onStatus(HttpStatusCode::isError, resp ->
+			.retrieve()
+			.onStatus(HttpStatusCode::isError, resp ->
 				resp.bodyToMono(String.class)
-					.flatMap(body -> Mono.error(new TossException("빌링키 발급 실패: " + body)))
+					.flatMap(body -> Mono.error(
+						new TossException(ErrorCode.TOSS_API_ERROR, new RuntimeException(body))
+					))
 			)
-			.bodyToMono(TossBillingAuthResponse.class).block();
+			.bodyToMono(TossBillingAuthResponse.class)
+			.block();
 	}
 
+	/** 자동결제 승인(빌링키) */
 	@Override
 	public TossBillingChargeResponse chargeWithBillingKey(
-		String billingKey, String customerKey, int amount,
-		String orderId, String orderName,
-		String customerEmail, String customerName,
-		Integer taxFreeAmount, Integer taxExemptionAmount
+		String billingKey,
+		String customerKey,
+		int amount,
+		String orderId,
+		String orderName,
+		String customerEmail,
+		String customerName,
+		Integer taxFreeAmount,
+		Integer taxExemptionAmount
 	) {
 		Map<String, Object> body = new HashMap<>();
 		body.put("customerKey",    customerKey);
@@ -133,12 +165,8 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 		body.put("orderName",      orderName);
 		body.put("customerEmail",  customerEmail);
 		body.put("customerName",   customerName);
-		if (taxFreeAmount != null) {
-			body.put("taxFreeAmount",      taxFreeAmount);
-		}
-		if (taxExemptionAmount != null) {
-			body.put("taxExemptionAmount", taxExemptionAmount);
-		}
+		if (taxFreeAmount != null)     body.put("taxFreeAmount",      taxFreeAmount);
+		if (taxExemptionAmount != null) body.put("taxExemptionAmount", taxExemptionAmount);
 
 		return webClientBuilder
 			.baseUrl(baseUrl)
@@ -150,12 +178,13 @@ public class TossPaymentClientImpl implements TossPaymentClient {
 			.retrieve()
 			.onStatus(HttpStatusCode::isError, resp ->
 				resp.bodyToMono(String.class)
-					.flatMap(b -> Mono.error(new TossException("자동결제 승인 실패: " + b)))
+					.flatMap(b -> Mono.error(
+						new TossException(ErrorCode.TOSS_API_ERROR, new RuntimeException(b))
+					))
 			)
 			.bodyToMono(TossBillingChargeResponse.class)
 			.block();
 	}
-
 
 	private static String encodeKey(String key) {
 		return Base64.getEncoder()

@@ -6,7 +6,7 @@ import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyRe
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 
 
 public interface PaymentPersistenceService {

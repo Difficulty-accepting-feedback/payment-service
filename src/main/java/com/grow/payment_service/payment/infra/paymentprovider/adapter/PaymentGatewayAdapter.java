@@ -1,9 +1,12 @@
-package com.grow.payment_service.payment.infra.paymentprovider;
+package com.grow.payment_service.payment.infra.paymentprovider.adapter;
 
 import org.springframework.stereotype.Component;
 
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-
+import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResponse;
 
 import lombok.RequiredArgsConstructor;
 

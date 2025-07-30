@@ -9,7 +9,9 @@ import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyRe
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
+import com.grow.payment_service.payment.global.exception.PaymentSagaException;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.global.exception.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +31,7 @@ public class RetryablePersistenceService {
 
 	/**
 	 * 1) 결제 승인 정보를 DB에 저장
-	 * 2) 저장 실패 시 3회 재시도 -> compensateApprovalFailure에서 보상(자동 취소) 실행
+	 * 2) 저장 실패 시 3회 재시도 -> recoverConfirm에서 보상(자동 취소) 실행
 	 */
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverConfirm")
 	public Long saveConfirmation(String paymentKey, String orderId, int amount) {
@@ -40,17 +42,24 @@ public class RetryablePersistenceService {
 	/**
 	 * 결제 승인 정보 저장 실패 시 보상(자동 취소)
 	 * - 외부 결제 보상 취소 요청 후 내부 보상 트랜잭션 실행
+	 * - 보상 완료 시 SAGA_COMPENSATE_COMPLETED 예외 전파
 	 */
 	public Long recoverConfirm(String paymentKey, String orderId, int amount, Throwable t) {
 		log.error("[결제-Retry] 결제 승인 DB 저장 실패, 보상 트랜잭션 실행: orderId={}, cause={}", orderId, t.toString());
-		gatewayPort.cancelPayment(paymentKey, CancelReason.SYSTEM_ERROR.name(), amount, "보상 취소");
-		compensationTxService.compensateApprovalFailure(orderId, t);
-		throw new IllegalStateException("결제 승인 보상(취소) 완료 - 원인: " + t.getMessage(), t);
+		try {
+			gatewayPort.cancelPayment(paymentKey, CancelReason.SYSTEM_ERROR.name(), amount, "보상 취소");
+			compensationTxService.compensateApprovalFailure(orderId, t);
+		} catch (Exception ex) {
+			// 보상 중 에러 발생 시
+			throw new PaymentSagaException(ErrorCode.SAGA_COMPENSATE_ERROR, ex);
+		}
+		// 보상 완료 알림
+		throw new PaymentSagaException(ErrorCode.SAGA_COMPENSATE_COMPLETED, t);
 	}
 
 	/**
 	 * 1) 사용자 요청 결제 취소 요청 내역을 DB에 저장
-	 * 2) 저장 실패 시 3회 재시도 -> compensateCancelRequestFailure에서 보상 트랜잭션 실행
+	 * 2) 저장 실패 시 3회 재시도 -> recoverCancelRequest에서 보상 트랜잭션 실행
 	 */
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancelRequest")
 	public PaymentCancelResponse saveCancelRequest(
@@ -60,10 +69,6 @@ public class RetryablePersistenceService {
 		return persistenceService.requestCancel(orderId, reason, amount);
 	}
 
-	/**
-	 * 결제 취소 요청 저장 실패 시 보상 트랜잭션
-	 * - 내부 보상 트랜잭션 실행
-	 */
 	public PaymentCancelResponse recoverCancelRequest(
 		String paymentKey, String orderId, int amount, CancelReason reason, Throwable t
 	) {
@@ -73,7 +78,7 @@ public class RetryablePersistenceService {
 
 	/**
 	 * 1) 사용자 요청 결제 취소 완료 내역을 DB에 저장
-	 * 2) 저장 실패 시 3회 재시도 -> compensateCancelCompleteFailure에서 보상 트랜잭션 실행
+	 * 2) 저장 실패 시 3회 재시도 -> recoverCancelComplete에서 보상 트랜잭션 실행
 	 */
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverCancelComplete")
 	public PaymentCancelResponse saveCancelComplete(String orderId) {
@@ -81,10 +86,6 @@ public class RetryablePersistenceService {
 		return persistenceService.completeCancel(orderId);
 	}
 
-	/**
-	 * 결제 취소 완료 저장 실패 시 보상 트랜잭션
-	 * - 내부 보상 트랜잭션 실행
-	 */
 	public PaymentCancelResponse recoverCancelComplete(String orderId, Throwable t) {
 		log.error("[결제-Retry] 결제 취소 완료 DB 저장 실패, 보상 트랜잭션 실행: orderId={}, cause={}", orderId, t.toString());
 		return compensationTxService.compensateCancelCompleteFailure(orderId, t);
@@ -92,7 +93,7 @@ public class RetryablePersistenceService {
 
 	/**
 	 * 1) 자동결제 빌링키를 DB에 저장
-	 * 2) 저장 실패 시 3회 재시도 -> compensateIssueKeyFailure에서 예외 전파
+	 * 2) 저장 실패 시 3회 재시도 -> recoverIssueKey에서 예외 전파
 	 */
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverIssueKey")
 	public PaymentIssueBillingKeyResponse saveBillingKey(String orderId, String billingKey) {
@@ -100,18 +101,16 @@ public class RetryablePersistenceService {
 		return persistenceService.saveBillingKeyRegistration(orderId, billingKey);
 	}
 
-	/**
-	 * 빌링키 발급 DB저장 실패 시 (보상 없음, 예외만)
-	 */
 	public PaymentIssueBillingKeyResponse recoverIssueKey(String orderId, String billingKey, Throwable t) {
 		log.error("[결제-Retry] 빌링키 발급 DB 저장 실패: orderId={}, cause={}", orderId, t.toString());
 		compensationTxService.compensateIssueKeyFailure(orderId, billingKey, t);
-		return null; // 위에서 예외를 throw 하므로 사실상 도달 불가
+		// 보상 후 예외가 던져지므로 도달하지 않음
+		throw new PaymentSagaException(ErrorCode.SAGA_COMPENSATE_COMPLETED, t);
 	}
 
 	/**
 	 * 1) 자동결제 결과를 DB에 저장
-	 * 2) 저장 실패 시 3회 재시도 -> compensateAutoChargeFailure에서 보상(자동 취소) 실행
+	 * 2) 저장 실패 시 3회 재시도 -> recoverAutoCharge에서 보상(자동 취소) 실행
 	 */
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverAutoCharge")
 	public PaymentConfirmResponse saveAutoCharge(
@@ -124,18 +123,23 @@ public class RetryablePersistenceService {
 	/**
 	 * 자동결제 결과 저장 실패 시 보상(자동 취소)
 	 * - 외부 결제 취소 후 내부 보상 트랜잭션 실행
+	 * - 보상 완료 시 SAGA_COMPENSATE_COMPLETED 예외 전파
 	 */
 	public PaymentConfirmResponse recoverAutoCharge(
 		String billingKey, String orderId, int amount, TossBillingChargeResponse tossRes, Throwable t
 	) {
 		log.error("[결제-Retry] 자동결제 승인 결과 DB 저장 실패, 보상 트랜잭션 실행: orderId={}, cause={}", orderId, t.toString());
-		gatewayPort.cancelPayment(
-			billingKey,
-			CancelReason.SYSTEM_ERROR.name(),
-			amount,
-			"보상-자동 결제 취소"
-		);
-		compensationTxService.compensateAutoChargeFailure(orderId, t);
-		throw new IllegalStateException("자동결제 보상 완료", t);
+		try {
+			gatewayPort.cancelPayment(
+				billingKey,
+				CancelReason.SYSTEM_ERROR.name(),
+				amount,
+				"보상-자동 결제 취소"
+			);
+			compensationTxService.compensateAutoChargeFailure(orderId, t);
+		} catch (Exception ex) {
+			throw new PaymentSagaException(ErrorCode.SAGA_COMPENSATE_ERROR, ex);
+		}
+		throw new PaymentSagaException(ErrorCode.SAGA_COMPENSATE_COMPLETED, t);
 	}
 }

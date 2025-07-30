@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.application.service;
+package com.grow.payment_service.payment.application.service.impl;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -8,10 +8,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.grow.payment_service.payment.application.dto.PaymentDetailResponse;
 import com.grow.payment_service.payment.application.dto.PaymentHistoryResponse;
+import com.grow.payment_service.payment.application.service.PaymentQueryService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
+import com.grow.payment_service.payment.global.exception.ErrorCode;
+import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,10 +30,8 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 	public PaymentDetailResponse getPayment(Long paymentId) {
 		// 도메인 조회
 		Payment payment = paymentRepository.findById(paymentId)
-			.orElseThrow(() -> new IllegalArgumentException(
-				"결제 내역을 찾을 수 없습니다." + paymentId
-			));
-	
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_NOT_FOUND));
+
 		// 기록 조회
 		List<PaymentHistory> histories = paymentHistoryRepository.findByPaymentId(paymentId);
 
@@ -41,8 +42,8 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 				history.getChangedAt(),
 				history.getReasonDetail()
 			))
-			.toList();
-		
+			.collect(Collectors.toList());
+
 		return new PaymentDetailResponse(
 			payment.getPaymentId(),
 			payment.getMemberId(),
@@ -60,10 +61,8 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 	public List<PaymentDetailResponse> getPaymentsByMemberId(Long memberId) {
 		List<Payment> payments = paymentRepository.findAllByMemberId(memberId);
 
-
-
 		return payments.stream()
-		// 결제 내역을 조회하고, 각 결제에 대한 기록을 조회하여 응답 DTO로 변환
+			// 결제 내역을 조회하고, 각 결제에 대한 기록을 조회하여 응답 DTO로 변환
 			.map(payment -> {
 				List<PaymentHistory> histories =
 					paymentHistoryRepository.findByPaymentId(payment.getPaymentId());
@@ -87,7 +86,6 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 					historyResponses
 				);
 			})
-			.toList();
+			.collect(Collectors.toList());
 	}
-	
 }

@@ -1,8 +1,8 @@
 package com.grow.payment_service.payment.domain.service;
 
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingAuthResponse;
-import com.grow.payment_service.payment.infra.paymentprovider.TossBillingChargeResponse;
-import com.grow.payment_service.payment.infra.paymentprovider.TossCancelResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResponse;
 
 /**
  * 결제 게이트웨이 포트 인터페이스

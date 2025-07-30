@@ -2,6 +2,7 @@ package com.grow.payment_service.payment.domain.model;
 
 import static com.grow.payment_service.payment.domain.model.enums.PayStatus.*;
 
+import com.grow.payment_service.payment.domain.exception.PaymentDomainException;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
@@ -61,9 +62,7 @@ public class Payment {
 
 	public Payment transitionTo(PayStatus nextStatus) {
 		if (!this.payStatus.canTransitionTo(nextStatus)) {
-			throw new IllegalStateException(
-				this.payStatus + " → " + nextStatus + " 전이 불가"
-			);
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, nextStatus);
 		}
 		return new Payment(
 			paymentId, memberId, planId, orderId,
@@ -77,7 +76,7 @@ public class Payment {
 	/** 취소 요청 상태로 전이, cancelReason 세팅 */
 	public Payment requestCancel(CancelReason reason) {
 		if (!this.payStatus.canTransitionTo(CANCEL_REQUESTED)) {
-			throw new IllegalStateException(payStatus + "에서 취소 요청 전이 불가");
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, CANCEL_REQUESTED);
 		}
 		return new Payment(
 			paymentId, memberId, planId, orderId,
@@ -90,7 +89,7 @@ public class Payment {
 	/** 취소 완료 상태로 전이 */
 	public Payment completeCancel() {
 		if (!this.payStatus.canTransitionTo(CANCELLED)) {
-			throw new IllegalStateException(payStatus + "에서 취소 완료 전이 불가");
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, CANCELLED);
 		}
 		return new Payment(
 			paymentId, memberId, planId, orderId,
@@ -103,7 +102,7 @@ public class Payment {
 	/** 빌링키 등록 후 상태 전이 */
 	public Payment registerBillingKey(String billingKey) {
 		if (!this.payStatus.canTransitionTo(AUTO_BILLING_READY))
-			throw new IllegalStateException(payStatus + "에서 자동결제 준비 상태 전이 불가");
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_READY);
 		return new Payment(
 			paymentId, memberId, planId, orderId,
 			paymentKey, billingKey, customerKey,
@@ -115,7 +114,7 @@ public class Payment {
 	/** 자동결제 승인 후 상태 전이 */
 	public Payment approveAutoBilling() {
 		if (!this.payStatus.canTransitionTo(AUTO_BILLING_APPROVED))
-			throw new IllegalStateException(payStatus + "에서 자동결제 승인 상태 전이 불가");
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_APPROVED);
 		return new Payment(
 			paymentId, memberId, planId, orderId,
 			paymentKey, billingKey, customerKey,
@@ -127,7 +126,7 @@ public class Payment {
 	/** 자동결제 실패 시 상태 전이 */
 	public Payment failAutoBilling(FailureReason reason) {
 		if (!this.payStatus.canTransitionTo(AUTO_BILLING_FAILED))
-			throw new IllegalStateException(payStatus + "에서 자동결제 실패 상태 전이 불가");
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_FAILED);
 		return new Payment(
 			paymentId, memberId, planId, orderId,
 			paymentKey, billingKey, customerKey,
