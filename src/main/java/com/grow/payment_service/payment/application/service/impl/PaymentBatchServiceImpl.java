@@ -1,6 +1,8 @@
 package com.grow.payment_service.payment.application.service.impl;
 
 import java.util.List;
+import java.util.UUID;
+
 import org.springframework.stereotype.Service;
 
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
@@ -16,6 +18,8 @@ import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.global.exception.ErrorCode;
 import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
+import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,6 +31,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
 	private final PaymentApplicationService paymentService;
+	private final RedisIdempotencyAdapter idempotencyAdapter;
 
 	/**
 	 * 매월 자동결제 대상에 대해 실제 과금을 시도합니다.
@@ -43,10 +48,16 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 		}
 
 		for (Payment p : targets) {
-			try {
-				// 멱등키로 orderId 사용
-				String idempotencyKey = p.getOrderId();
+			// UUID 멱등키 생성
+			String idempotencyKey = UUID.randomUUID().toString();
 
+			// Redis에 멱등키 예약 시도
+			if (!idempotencyAdapter.reserve(idempotencyKey)) {
+				log.warn("[중복 자동결제 차단] idempotencyKey={}", idempotencyKey);
+				continue;
+			}
+
+			try {
 				// 자동결제 파라미터 생성
 				PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
 					.billingKey(p.getBillingKey())
@@ -61,13 +72,14 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 					.build();
 
 				// idempotencyKey 함께 전달
-				PaymentConfirmResponse res = paymentService.chargeWithBillingKey(param, idempotencyKey);
+				PaymentConfirmResponse res =
+					paymentService.chargeWithBillingKey(param, idempotencyKey);
 
-				log.info("[자동결제 성공] 결제ID={}, 주문ID={}, 결과상태={}",
-					p.getPaymentId(), p.getOrderId(), res.getPayStatus());
+				log.info("[자동결제 성공] idempotencyKey={}, 결제ID={}, 주문ID={}, 결과={}",
+					idempotencyKey, p.getPaymentId(), p.getOrderId(), res.getPayStatus());
 			} catch (Exception ex) {
-				log.error("[자동결제 실패] 결제ID={}, 주문ID={}, 원인={}",
-					p.getPaymentId(), p.getOrderId(), ex.getMessage(), ex);
+				log.error("[자동결제 실패] idempotencyKey={}, 결제ID={}, 주문ID={}, 원인={}",
+					idempotencyKey, p.getPaymentId(), p.getOrderId(), ex.getMessage(), ex);
 				throw new PaymentApplicationException(
 					ErrorCode.BATCH_AUTO_CHARGE_ERROR, ex
 				);
@@ -119,7 +131,8 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	@Override
 	public void markAutoChargeFailedPermanently() {
 		// (예시) AUTO_BILLING_READY → AUTO_BILLING_FAILED 로 전이
-		List<Payment> targets = paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY);
+		List<Payment> targets = paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(
+			PayStatus.AUTO_BILLING_READY);
 		for (Payment p : targets) {
 			Payment failed = p.failAutoBilling(FailureReason.RETRY_EXCEEDED);   // Domain 모델에 구현
 			paymentRepository.save(failed);
