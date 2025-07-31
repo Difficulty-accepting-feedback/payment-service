@@ -34,7 +34,7 @@ public class PaymentController {
 	/** 결제 승인 */
 	@PostMapping("/confirm")
 	public ResponseEntity<RsData<Long>> confirmPayment(
-		@RequestHeader("X-Idempotency-Key") String idempotencyKey,
+		@RequestHeader("Idempotency-Key") String idempotencyKey,
 		@RequestBody @Valid PaymentConfirmRequest req
 	) {
 		Long paymentId = paymentService.confirmPayment(
@@ -83,7 +83,7 @@ public class PaymentController {
 	/** 자동결제 승인(빌링키 결제) */
 	@PostMapping("/billing/charge")
 	public ResponseEntity<RsData<PaymentConfirmResponse>> chargeWithBillingKey(
-		@RequestHeader("X-Idempotency-Key") String idempotencyKey,
+		@RequestHeader("Idempotency-Key") String idempotencyKey,
 		@Valid @RequestBody PaymentAutoChargeRequest req
 	) {
 		PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()

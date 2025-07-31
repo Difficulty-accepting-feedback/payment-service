@@ -13,8 +13,8 @@ public class RedisIdempotencyAdapter {
 
 	private final StringRedisTemplate redisTemplate;
 	private static final String PREFIX = "idempotency:";
-	// 유효기간 1시간
-	private static final Duration TTL = Duration.ofHours(1);
+	// 유효 기간 15일
+	private static final Duration TTL = Duration.ofDays(15);
 
 	/**
 	 * 중복 요청 방지를 위한 예약 메서드

@@ -27,8 +27,8 @@ public class PaymentSagaOrchestrator {
 	 * 2) DB 저장(재시도 포함) → 실패 시 보상(자동 취소)
 	 */
 	public Long confirmWithCompensation(String paymentKey, String orderId, int amount, String idempotencyKey) {
-		// 이미 처리된 orderId -> 기존 결제ID 리턴
-		if (!idempotencyAdapter.reserve(orderId)) {
+		// 이미 처리된 idempotencyKey -> 기존 결제ID 리턴
+		if (!idempotencyAdapter.reserve(idempotencyKey)) {
 			return persistenceService.findByOrderId(orderId).getPaymentId();
 		}
 		// 외부 결제 승인
@@ -70,8 +70,8 @@ public class PaymentSagaOrchestrator {
 	 * 2) DB 승인 결과 저장(재시도 포함) → 실패 시 보상(자동 취소)
 	 */
 	public PaymentConfirmResponse autoChargeWithCompensation(PaymentAutoChargeParam param, String idempotencyKey) {
-		// 이미 자동결제 처리된 orderId -> 기존 상태 리턴
-		if (!idempotencyAdapter.reserve(param.getOrderId())) {
+		// 이미 자동결제 처리된 idempotencyKey -> 기존 상태 리턴
+		if (!idempotencyAdapter.reserve(idempotencyKey)) {
 			Payment existing = persistenceService.findByOrderId(param.getOrderId());
 			return new PaymentConfirmResponse(
 				existing.getPaymentId(),

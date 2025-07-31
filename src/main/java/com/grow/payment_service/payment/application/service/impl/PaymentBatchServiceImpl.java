@@ -34,8 +34,8 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	 */
 	@Override
 	public void processMonthlyAutoCharge() {
-		List<Payment> targets =
-			paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY);
+		List<Payment> targets = paymentRepository
+			.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY);
 
 		if (targets.isEmpty()) {
 			log.info("[자동결제 대상 없음] 처리할 결제 건이 없습니다.");
@@ -44,19 +44,25 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 		for (Payment p : targets) {
 			try {
-				PaymentConfirmResponse res = paymentService.chargeWithBillingKey(
-					PaymentAutoChargeParam.builder()
-						.billingKey(p.getBillingKey())
-						.customerKey(p.getCustomerKey())
-						.amount(p.getTotalAmount().intValue())
-						.orderId(p.getOrderId())
-						.orderName("GROW Plan #" + p.getOrderId())
-						.customerEmail("member" + p.getMemberId() + "@example.com")
-						.customerName("Member " + p.getMemberId())
-						.taxFreeAmount(null)
-						.taxExemptionAmount(null)
-						.build()
-				);
+				// 멱등키로 orderId 사용
+				String idempotencyKey = p.getOrderId();
+
+				// 자동결제 파라미터 생성
+				PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
+					.billingKey(p.getBillingKey())
+					.customerKey(p.getCustomerKey())
+					.amount(p.getTotalAmount().intValue())
+					.orderId(p.getOrderId())
+					.orderName("GROW Plan #" + p.getOrderId())
+					.customerEmail("member" + p.getMemberId() + "@example.com")
+					.customerName("Member " + p.getMemberId())
+					.taxFreeAmount(null)
+					.taxExemptionAmount(null)
+					.build();
+
+				// idempotencyKey 함께 전달
+				PaymentConfirmResponse res = paymentService.chargeWithBillingKey(param, idempotencyKey);
+
 				log.info("[자동결제 성공] 결제ID={}, 주문ID={}, 결과상태={}",
 					p.getPaymentId(), p.getOrderId(), res.getPayStatus());
 			} catch (Exception ex) {
