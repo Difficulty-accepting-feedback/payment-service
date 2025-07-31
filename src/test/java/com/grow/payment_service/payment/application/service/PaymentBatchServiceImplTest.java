@@ -25,7 +25,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-
 @ExtendWith(MockitoExtension.class)
 class PaymentBatchServiceImplTest {
 
@@ -41,9 +40,14 @@ class PaymentBatchServiceImplTest {
 	@InjectMocks
 	PaymentBatchServiceImpl batchService;
 
-	@Captor ArgumentCaptor<PaymentAutoChargeParam> autoChargeParamCaptor;
-	@Captor ArgumentCaptor<Payment> paymentCaptor;
-	@Captor ArgumentCaptor<PaymentHistory> historyCaptor;
+	@Captor
+	ArgumentCaptor<PaymentAutoChargeParam> autoChargeParamCaptor;
+	@Captor
+	ArgumentCaptor<Payment> paymentCaptor;
+	@Captor
+	ArgumentCaptor<PaymentHistory> historyCaptor;
+	@Captor
+	private ArgumentCaptor<String> idempotencyKeyCaptor;
 
 	private Payment setupReadyPayment() {
 		// 기본 create 상태(READY)에서 AUTO_BILLING_READY 로 전이
@@ -74,23 +78,36 @@ class PaymentBatchServiceImplTest {
 
 	@Test
 	void processMonthlyAutoCharge_withOneTarget_callsChargeWithBillingKey() {
-		Payment ready = setupReadyPayment();
+		// 준비: READY 상태 결제 하나
+		Payment ready = setupReadyPayment(); // billingKey="BK-ABC", orderId="order-1", customerKey="cust_1", amount=1000
 		given(paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY))
 			.willReturn(List.of(ready));
 
-		PaymentConfirmResponse mockRes = new PaymentConfirmResponse(42L, PayStatus.AUTO_BILLING_APPROVED.name());
-		given(paymentService.chargeWithBillingKey(any())).willReturn(mockRes);
+		// stub: chargeWithBillingKey(param, idempotencyKey) 호출 시 mock 응답
+		PaymentConfirmResponse mockRes =
+			new PaymentConfirmResponse(42L, PayStatus.AUTO_BILLING_APPROVED.name());
+		given(paymentService.chargeWithBillingKey(any(PaymentAutoChargeParam.class), anyString()))
+			.willReturn(mockRes);
 
+		// 실행
 		batchService.processMonthlyAutoCharge();
 
-		// chargeWithBillingKey가 정확한 파라미터로 호출됐는지 검증
-		then(paymentService).should().chargeWithBillingKey(autoChargeParamCaptor.capture());
+		// 검증: 두 파라미터가 정확히 전달됐는지
+		then(paymentService).should().chargeWithBillingKey(
+			autoChargeParamCaptor.capture(),
+			idempotencyKeyCaptor.capture()
+		);
 		PaymentAutoChargeParam param = autoChargeParamCaptor.getValue();
+		String idempotencyKey = idempotencyKeyCaptor.getValue();
 
+		// 파라미터 검증
 		assertThat(param.getBillingKey()).isEqualTo("BK-ABC");
 		assertThat(param.getCustomerKey()).isEqualTo("cust_1");
 		assertThat(param.getOrderId()).isEqualTo("order-1");
 		assertThat(param.getAmount()).isEqualTo(1000);
+
+		// idempotencyKey 는 orderId 를 재사용하므로
+		assertThat(idempotencyKey).isEqualTo("order-1");
 	}
 
 	@Test
