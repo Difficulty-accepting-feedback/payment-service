@@ -61,8 +61,8 @@ class MonthlyAutoChargeJobTest {
 	}
 
 	@Test
-	@DisplayName("재시도 남음: 실패 시 1분 후 재시도 트리거 등록")
-	void execute_onFailureBeforeMaxRetry_shouldScheduleOneMinuteLater() throws Exception {
+	@DisplayName("재시도 남음: 실패 시 60분 후 재시도 트리거 등록")
+	void execute_onFailureBeforeMaxRetry_shouldScheduleSixtyMinutesLater() throws Exception {
 		// given
 		doThrow(new RuntimeException("fail"))
 			.when(batchService).processMonthlyAutoCharge();
@@ -70,15 +70,17 @@ class MonthlyAutoChargeJobTest {
 		// when
 		job.execute(context);
 
-		// then: retryCount 증가
+		// then: retryCount가 1로 증가
 		assertThat(jobDetail.getJobDataMap().getInt("retryCount")).isEqualTo(1);
 
-		// and: 1분 뒤 Trigger 예약 확인
+		// and: 약 60분 뒤 Trigger 예약 확인
 		ArgumentCaptor<Trigger> captor = ArgumentCaptor.forClass(Trigger.class);
 		verify(scheduler).scheduleJob(captor.capture());
 		Trigger t = captor.getValue();
+
 		long diffSec = (t.getStartTime().getTime() - System.currentTimeMillis()) / 1000;
-		assertThat(diffSec).isBetween(55L, 65L);
+		// 3600초(60분) 전후 오차 범위 5초
+		assertThat(diffSec).isBetween(3595L, 3605L);
 	}
 
 	@Test

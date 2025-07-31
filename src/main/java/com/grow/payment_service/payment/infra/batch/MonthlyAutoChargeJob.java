@@ -41,16 +41,23 @@ public class MonthlyAutoChargeJob implements Job {
 			data.put("retryCount", retryCount);
 
 			if (retryCount < maxRetry) {
-				// 고정 지연: 1분 후에 재시도
+				// 지수 백오프 + 최대 하루(1440분) 지연 (현재 5회여서 1시간, 2시간, 4시간, 8시간, 16시간 간격)
+				int baseDelayMin = 60; // 기본 지연 시간 60분
+				int maxDelayMin  = 24 * 60;
+				int delayMin = (int) Math.min(
+					maxDelayMin,
+					baseDelayMin * Math.pow(2, retryCount - 1)
+				);
+
 				Trigger retryTrigger = TriggerBuilder.newTrigger()
 					.forJob(ctx.getJobDetail())
 					.withIdentity("monthlyAutoChargeRetry_" + retryCount, "retry")
-					.startAt(DateBuilder.futureDate(1, DateBuilder.IntervalUnit.MINUTE))
+					.startAt(DateBuilder.futureDate(delayMin, DateBuilder.IntervalUnit.MINUTE))
 					.usingJobData(data)
 					.build();
 				try {
 					ctx.getScheduler().scheduleJob(retryTrigger);
-					log.warn("[자동결제] 재시도 예약 (count={} delay=1분)", retryCount);
+					log.warn("[자동결제] 재시도 예약 (count={}, delay={}분)", retryCount, delayMin);
 				} catch (SchedulerException se) {
 					log.error("[자동결제] 재시도 Trigger 등록 실패", se);
 				}
