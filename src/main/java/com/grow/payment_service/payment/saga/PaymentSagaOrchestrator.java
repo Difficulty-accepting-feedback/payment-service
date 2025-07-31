@@ -3,10 +3,13 @@ package com.grow.payment_service.payment.saga;
 import org.springframework.stereotype.Service;
 
 import com.grow.payment_service.payment.application.dto.*;
+import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
+import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
+import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
 
 import lombok.RequiredArgsConstructor;
 
@@ -16,12 +19,18 @@ public class PaymentSagaOrchestrator {
 
 	private final PaymentGatewayPort gatewayPort;
 	private final RetryablePersistenceService retryableService;
+	private final RedisIdempotencyAdapter idempotencyAdapter;
+	private final PaymentPersistenceService persistenceService;
 
 	/**
 	 * 1) 토스 결제 승인 API 호출
 	 * 2) DB 저장(재시도 포함) → 실패 시 보상(자동 취소)
 	 */
-	public Long confirmWithCompensation(String paymentKey, String orderId, int amount) {
+	public Long confirmWithCompensation(String paymentKey, String orderId, int amount, String idempotencyKey) {
+		// 이미 처리된 orderId -> 기존 결제ID 리턴
+		if (!idempotencyAdapter.reserve(orderId)) {
+			return persistenceService.findByOrderId(orderId).getPaymentId();
+		}
 		// 외부 결제 승인
 		gatewayPort.confirmPayment(paymentKey, orderId, amount);
 		// DB 저장 및 실패 시 보상 로직 실행
@@ -60,7 +69,16 @@ public class PaymentSagaOrchestrator {
 	 * 1) 토스 빌링키 자동결제 API 호출
 	 * 2) DB 승인 결과 저장(재시도 포함) → 실패 시 보상(자동 취소)
 	 */
-	public PaymentConfirmResponse autoChargeWithCompensation(PaymentAutoChargeParam param) {
+	public PaymentConfirmResponse autoChargeWithCompensation(PaymentAutoChargeParam param, String idempotencyKey) {
+		// 이미 자동결제 처리된 orderId -> 기존 상태 리턴
+		if (!idempotencyAdapter.reserve(param.getOrderId())) {
+			Payment existing = persistenceService.findByOrderId(param.getOrderId());
+			return new PaymentConfirmResponse(
+				existing.getPaymentId(),
+				existing.getPayStatus().name()
+			);
+		}
+
 		// 외부 자동결제 실행
 		TossBillingChargeResponse toss = gatewayPort.chargeWithBillingKey(
 			param.getBillingKey(), param.getCustomerKey(), param.getAmount(),
