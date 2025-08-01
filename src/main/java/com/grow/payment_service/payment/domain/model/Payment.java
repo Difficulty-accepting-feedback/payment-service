@@ -153,6 +153,21 @@ public class Payment {
 		);
 	}
 
+	/**
+	 * 자동결제 준비 상태에서 자동결제 진행 중으로 전이
+	 */
+	public Payment startAutoBilling() {
+		if (!this.payStatus.canTransitionTo(PayStatus.AUTO_BILLING_IN_PROGRESS)) {
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, PayStatus.AUTO_BILLING_IN_PROGRESS);
+		}
+		return new Payment(
+			paymentId, memberId, planId, orderId,
+			paymentKey, billingKey, customerKey,
+			totalAmount, PayStatus.AUTO_BILLING_IN_PROGRESS,
+			method, failureReason, cancelReason
+		);
+	}
+
 	/** 결제 승인 후 취소 상태 전이 */
 	public Payment forceCancel(CancelReason reason) {
 		return new Payment(

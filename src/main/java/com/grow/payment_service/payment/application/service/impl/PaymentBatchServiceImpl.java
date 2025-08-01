@@ -1,5 +1,7 @@
 package com.grow.payment_service.payment.application.service.impl;
 
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,26 +49,43 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 			return;
 		}
 
-		for (Payment p : targets) {
-			// UUID 멱등키 생성
-			String idempotencyKey = UUID.randomUUID().toString();
+		String billingMonth = YearMonth.now()
+			.format(DateTimeFormatter.ofPattern("yyyy-MM"));
 
-			// Redis에 멱등키 예약 시도
+		for (Payment p : targets) {
+			// recordKey : "autoCharge:{orderId}:{billingMonth}"
+			// 한 결제 건(orderId)과 한 청구월(billingMonth) 당
+			// 한 번만 생성되는 UUID 멱등키를 관리하기 위한 고유 식별자
+			String recordKey = "autoCharge:" + p.getOrderId() + ":" + billingMonth;
+
+			// UUID 멱등키를 한 번만 생성(getOrCreateKey) -> idempotencyKey
+			String idempotencyKey = idempotencyAdapter.getOrCreateKey(recordKey);
+
+			// 예약(reserve) 검사 -> false 면 이미 처리된 키
 			if (!idempotencyAdapter.reserve(idempotencyKey)) {
-				log.warn("[중복 자동결제 차단] idempotencyKey={}", idempotencyKey);
+				log.warn("[중복 자동결제 차단] idemKey={}", idempotencyKey);
 				continue;
 			}
-
 			try {
+
+				// 상태 전이: AUTO_BILLING_READY -> IN_PROGRESS
+				Payment inProgress = p.startAutoBilling();
+				paymentRepository.save(inProgress);
+				historyRepository.save(PaymentHistory.create(
+					inProgress.getPaymentId(),
+					inProgress.getPayStatus(),
+					"자동결제 진행 중 상태로 전이"
+				));
+
 				// 자동결제 파라미터 생성
 				PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
-					.billingKey(p.getBillingKey())
-					.customerKey(p.getCustomerKey())
-					.amount(p.getTotalAmount().intValue())
-					.orderId(p.getOrderId())
-					.orderName("GROW Plan #" + p.getOrderId())
-					.customerEmail("member" + p.getMemberId() + "@example.com")
-					.customerName("Member " + p.getMemberId())
+					.billingKey(inProgress.getBillingKey())
+					.customerKey(inProgress.getCustomerKey())
+					.amount(inProgress.getTotalAmount().intValue())
+					.orderId(inProgress.getOrderId())
+					.orderName("GROW Plan #" +inProgress.getOrderId())
+					.customerEmail("member" + inProgress.getMemberId() + "@example.com")
+					.customerName("Member " + inProgress.getMemberId())
 					.taxFreeAmount(null)
 					.taxExemptionAmount(null)
 					.build();
@@ -101,13 +120,17 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 		}
 
 		for (Payment p : list) {
+			// 빌링 키가 있는 경우만 처리
 			if (p.getBillingKey() != null) {
 				log.info("[빌링키 제거 시작] 결제ID={}, 기존BillingKey={}",
 					p.getPaymentId(), p.getBillingKey());
 
 				try {
+					// 빌링 키 제거
 					Payment updated = p.clearBillingKey();
+					// 변경된 결제 저장
 					paymentRepository.save(updated);
+					// 히스토리 기록
 					historyRepository.save(
 						PaymentHistory.create(
 							updated.getPaymentId(),
@@ -130,17 +153,21 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 	@Override
 	public void markAutoChargeFailedPermanently() {
-		// (예시) AUTO_BILLING_READY → AUTO_BILLING_FAILED 로 전이
+		// AUTO_BILLING_IN_PROGRESS 상태의 결제 목록 조회
 		List<Payment> targets = paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(
-			PayStatus.AUTO_BILLING_READY);
+			PayStatus.AUTO_BILLING_IN_PROGRESS);
+
+		// 각 결제에 대해 실패 상태로 전이
 		for (Payment p : targets) {
-			Payment failed = p.failAutoBilling(FailureReason.RETRY_EXCEEDED);   // Domain 모델에 구현
-			paymentRepository.save(failed);
+			Payment failed = p.failAutoBilling(FailureReason.RETRY_EXCEEDED);
+			Payment cleared = failed.clearBillingKey(); // 빌링키 제거
+
+			paymentRepository.save(cleared);
 			historyRepository.save(
 				PaymentHistory.create(
-					failed.getPaymentId(),
-					failed.getPayStatus(),
-					"자동 결제 실패 처리"
+					cleared.getPaymentId(),
+					cleared.getPayStatus(),
+					"자동결제 재시도 한계 도달 -> 실패 처리 및 빌링키 제거"
 				)
 			);
 		}

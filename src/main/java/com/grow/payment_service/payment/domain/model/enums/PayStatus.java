@@ -22,6 +22,7 @@ public enum PayStatus {
 
 	// 자동결제 흐름
 	AUTO_BILLING_READY("자동결제 준비 완료"),
+	AUTO_BILLING_IN_PROGRESS("자동결제 진행 중"),
 	AUTO_BILLING_APPROVED("자동결제 승인 완료"),
 	AUTO_BILLING_FAILED("자동결제 승인 실패"),
 
@@ -69,6 +70,7 @@ public enum PayStatus {
 			// 자동결제 준비 -> 승인 or 실패 or 중단
 			entry(AUTO_BILLING_READY, EnumSet.of(
 				AUTO_BILLING_APPROVED,
+				AUTO_BILLING_IN_PROGRESS,
 				AUTO_BILLING_FAILED,
 				ABORTED
 			)),

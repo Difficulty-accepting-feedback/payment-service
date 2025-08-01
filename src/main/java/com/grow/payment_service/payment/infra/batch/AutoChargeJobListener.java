@@ -76,9 +76,13 @@ public class AutoChargeJobListener extends JobListenerSupport {
 				log.error("[자동결제] 재시도 Trigger 등록 실패", e);
 			}
 		} else {
-			// 영구 실패 처리
+			// 실패 처리 대상 상태: AUTO_BILLING_IN_PROGRESS
 			log.error("[자동결제] 재시도 한계({}회) 도달, 실패 처리", maxRetry, jobEx);
-			paymentBatchService.markAutoChargeFailedPermanently();
+			try {
+				paymentBatchService.markAutoChargeFailedPermanently();
+			} catch (Exception e) {
+				log.error("[자동결제] 실패 처리 중 추가 예외 발생", e);
+			}
 		}
 	}
 }

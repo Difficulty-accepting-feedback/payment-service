@@ -1,20 +1,16 @@
 package com.grow.payment_service.payment.infra.batch;
 
-import static org.assertj.core.api.AssertionsForClassTypes.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.quartz.JobBuilder;
-import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.Scheduler;
-import org.quartz.Trigger;
 
 import com.grow.payment_service.payment.application.service.PaymentBatchService;
 
@@ -24,81 +20,47 @@ class MonthlyAutoChargeJobTest {
 	@Mock
 	private PaymentBatchService batchService;
 	@Mock
-	private Scheduler scheduler;
+	private Scheduler scheduler;  // MonthlyAutoChargeJob 에서는 사용되지 않음
 
 	@InjectMocks
 	private MonthlyAutoChargeJob job;
 
-	private JobDetail jobDetail;
 	private JobExecutionContext context;
 
 	@BeforeEach
 	void setup() {
 		MockitoAnnotations.openMocks(this);
-
-		// retryCount 와 maxRetry를 Integer 로 넣어줍니다
-		jobDetail = JobBuilder.newJob(MonthlyAutoChargeJob.class)
-			.withIdentity("testJob")
-			.storeDurably()
-			.usingJobData("retryCount", Integer.valueOf(0))
-			.usingJobData("maxRetry",   Integer.valueOf(5))
-			.build();
-
 		context = mock(JobExecutionContext.class);
-		when(context.getJobDetail()).thenReturn(jobDetail);
 		when(context.getScheduler()).thenReturn(scheduler);
 	}
 
 	@Test
-	@DisplayName("성공 시 retryCount 초기화 및 스케줄 등록 없음")
-	void execute_onSuccess_shouldResetRetryCountAndNotSchedule() throws Exception {
-		// given: processMonthlyAutoCharge 정상 실행
+	@DisplayName("성공 시: processMonthlyAutoCharge() 호출")
+	void execute_onSuccess_shouldInvokeProcess() throws Exception {
+		// given: 정상 동작 (batchService.processMonthlyAutoCharge() 예외 없음)
+
+		// when
 		job.execute(context);
 
 		// then
-		assertThat(jobDetail.getJobDataMap().getInt("retryCount")).isZero();
+		verify(batchService, times(1)).processMonthlyAutoCharge();
+		verifyNoMoreInteractions(batchService);
+		// scheduler 는 전혀 사용되지 않아야 함
 		verifyNoInteractions(scheduler);
 	}
 
 	@Test
-	@DisplayName("재시도 남음: 실패 시 60분 후 재시도 트리거 등록")
-	void execute_onFailureBeforeMaxRetry_shouldScheduleSixtyMinutesLater() throws Exception {
-		// given
-		doThrow(new RuntimeException("fail"))
-			.when(batchService).processMonthlyAutoCharge();
+	@DisplayName("실패 시: RuntimeException 예외 전파")
+	void execute_onFailure_shouldPropagateException() {
+		// given: processMonthlyAutoCharge() 에서 예외 발생
+		doThrow(new RuntimeException("자동결제 실패")).when(batchService).processMonthlyAutoCharge();
 
-		// when
-		job.execute(context);
+		// when & then
+		assertThatThrownBy(() -> job.execute(context))
+			.isInstanceOf(RuntimeException.class)
+			.hasMessage("자동결제 실패");
 
-		// then: retryCount가 1로 증가
-		assertThat(jobDetail.getJobDataMap().getInt("retryCount")).isEqualTo(1);
-
-		// and: 약 60분 뒤 Trigger 예약 확인
-		ArgumentCaptor<Trigger> captor = ArgumentCaptor.forClass(Trigger.class);
-		verify(scheduler).scheduleJob(captor.capture());
-		Trigger t = captor.getValue();
-
-		long diffSec = (t.getStartTime().getTime() - System.currentTimeMillis()) / 1000;
-		// 3600초(60분) 전후 오차 범위 5초
-		assertThat(diffSec).isBetween(3595L, 3605L);
-	}
-
-	@Test
-	@DisplayName("재시도 한계 도달 시: 영구 실패 처리만 호출")
-	void execute_onFailureAtMaxRetry_shouldMarkFailedAndNotSchedule() throws Exception {
-		// given: 이미 retryCount=4, maxRetry=5
-		jobDetail.getJobDataMap().put("retryCount", 4);
-		doThrow(new RuntimeException("fail"))
-			.when(batchService).processMonthlyAutoCharge();
-
-		// when
-		job.execute(context);
-
-		// then: retryCount 가 5 로 증가
-		assertThat(jobDetail.getJobDataMap().getInt("retryCount")).isEqualTo(5);
-		// scheduleJob 호출 없음
-		verify(scheduler, never()).scheduleJob(any());
-		// 영구 실패 처리만 호출
-		verify(batchService).markAutoChargeFailedPermanently();
+		verify(batchService, times(1)).processMonthlyAutoCharge();
+		verifyNoInteractions(scheduler);
 	}
 }
