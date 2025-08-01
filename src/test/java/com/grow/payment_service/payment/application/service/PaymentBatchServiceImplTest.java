@@ -5,26 +5,22 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
 
 import java.util.List;
-import java.util.UUID;
 
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.service.impl.PaymentBatchServiceImpl;
 import com.grow.payment_service.payment.domain.model.Payment;
-import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
-import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
+import org.mockito.*;
+
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,27 +30,20 @@ class PaymentBatchServiceImplTest {
 	PaymentRepository paymentRepository;
 	@Mock
 	PaymentHistoryRepository historyRepository;
+	@Mock PaymentApplicationService paymentService;
 	@Mock
-	PaymentApplicationService paymentService;
-	@Mock
-	TossPaymentClient tossClient;
-	@Mock
-	private RedisIdempotencyAdapter idempotencyAdapter;
+	RedisIdempotencyAdapter idempotencyAdapter;
 
 	@InjectMocks
 	PaymentBatchServiceImpl batchService;
 
-	@Captor
-	ArgumentCaptor<PaymentAutoChargeParam> autoChargeParamCaptor;
-	@Captor
-	ArgumentCaptor<Payment> paymentCaptor;
-	@Captor
-	ArgumentCaptor<PaymentHistory> historyCaptor;
-	@Captor
-	private ArgumentCaptor<String> idempotencyKeyCaptor;
+	@Captor ArgumentCaptor<PaymentAutoChargeParam> autoChargeParamCaptor;
+	@Captor ArgumentCaptor<String> idempotencyKeyCaptor;
+	@Captor ArgumentCaptor<Payment> paymentCaptor;
+	@Captor ArgumentCaptor<PaymentHistory> historyCaptor;
 
 	private Payment setupReadyPayment() {
-		// 기본 create 상태(READY)에서 AUTO_BILLING_READY 로 전이
+		// READY → AUTO_BILLING_READY 상태로 전이된 테스트용 객체
 		Payment p = Payment.create(
 			1L, 1L, "order-1",
 			null, null,
@@ -67,7 +56,7 @@ class PaymentBatchServiceImplTest {
 
 	@BeforeEach
 	void cleanMocks() {
-		clearInvocations(paymentRepository, historyRepository, paymentService, tossClient);
+		clearInvocations(paymentRepository, historyRepository, paymentService, idempotencyAdapter);
 	}
 
 	@Test
@@ -78,26 +67,42 @@ class PaymentBatchServiceImplTest {
 		batchService.processMonthlyAutoCharge();
 
 		then(paymentService).shouldHaveNoInteractions();
+		then(idempotencyAdapter).shouldHaveNoInteractions();
 	}
 
 	@Test
 	void processMonthlyAutoCharge_withOneTarget_callsChargeWithBillingKey() {
-		// 준비
+		// 준비: 한 건 리턴
 		Payment ready = setupReadyPayment();
 		given(paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY))
 			.willReturn(List.of(ready));
-		// 멱등키 예약 성공
-		given(idempotencyAdapter.reserve(anyString())).willReturn(true);
-		// 자동결제 호출 스텁
+
+		// getOrCreateKey, reserve Stub
+		given(idempotencyAdapter.getOrCreateKey(anyString()))
+			.willReturn("idem-key-123");
+		given(idempotencyAdapter.reserve("idem-key-123"))
+			.willReturn(true);
+
+		// 결제 서비스 Stub
 		PaymentConfirmResponse mockRes =
 			new PaymentConfirmResponse(42L, PayStatus.AUTO_BILLING_APPROVED.name());
-		given(paymentService.chargeWithBillingKey(any(PaymentAutoChargeParam.class), anyString()))
+		given(paymentService.chargeWithBillingKey(any(), anyString()))
 			.willReturn(mockRes);
+
+		// 상태 전이된 객체 저장 stub
+		Payment inProgress = ready.startAutoBilling();
+		given(paymentRepository.save(any(Payment.class)))
+			.willReturn(inProgress);
 
 		// 실행
 		batchService.processMonthlyAutoCharge();
 
-		// 캡처 및 검증
+		// 상태 전이 저장 검증
+		then(paymentRepository).should().save(paymentCaptor.capture());
+		Payment saved = paymentCaptor.getValue();
+		assertThat(saved.getPayStatus()).isEqualTo(PayStatus.AUTO_BILLING_IN_PROGRESS);
+
+		// 파라미터 캡처
 		then(paymentService).should().chargeWithBillingKey(
 			autoChargeParamCaptor.capture(),
 			idempotencyKeyCaptor.capture()
@@ -109,9 +114,14 @@ class PaymentBatchServiceImplTest {
 		assertThat(param.getCustomerKey()).isEqualTo("cust_1");
 		assertThat(param.getOrderId()).isEqualTo("order-1");
 		assertThat(param.getAmount()).isEqualTo(1000);
+		assertThat(idemKey).isEqualTo("idem-key-123");
 
-		// idempotencyKey는 UUID 형식이어야 함
-		assertThatCode(() -> UUID.fromString(idemKey)).doesNotThrowAnyException();
+		// 히스토리 저장 검증
+		then(historyRepository).should().save(historyCaptor.capture());
+		PaymentHistory hist = historyCaptor.getValue();
+		assertThat(hist.getPaymentId()).isEqualTo(saved.getPaymentId());
+		assertThat(hist.getStatus()).isEqualTo(PayStatus.AUTO_BILLING_IN_PROGRESS);
+		assertThat(hist.getReasonDetail()).isEqualTo("자동결제 진행 중 상태로 전이");
 	}
 
 	@Test
@@ -128,7 +138,6 @@ class PaymentBatchServiceImplTest {
 	@Test
 	void removeBillingKeysForMember_withBillingKey_removesKeyAndSavesHistory() {
 		long memberId = 2L;
-		// READY 상태로 billingKey 등록된 결제
 		Payment ready = Payment.create(
 			memberId, 1L, "order-2",
 			null, "BK-XYZ",
@@ -145,17 +154,13 @@ class PaymentBatchServiceImplTest {
 
 		batchService.removeBillingKeysForMember(memberId);
 
-		// 결제 저장 시 billingKey=null 인 Payment가 전달되었는지 캡처
 		then(paymentRepository).should().save(paymentCaptor.capture());
-		Payment saved = paymentCaptor.getValue();
-		assertThat(saved.getBillingKey()).isNull();
-		assertThat(saved.getPaymentId()).isEqualTo(ready.getPaymentId());
+		assertThat(paymentCaptor.getValue().getBillingKey()).isNull();
 
-		// 히스토리 저장 시 해당 paymentId, status, reasonDetail 확인
 		then(historyRepository).should().save(historyCaptor.capture());
 		PaymentHistory hist = historyCaptor.getValue();
 		assertThat(hist.getPaymentId()).isEqualTo(ready.getPaymentId());
-		assertThat(hist.getStatus()).isEqualTo(saved.getPayStatus());
+		assertThat(hist.getStatus()).isEqualTo(cleared.getPayStatus());
 		assertThat(hist.getReasonDetail()).isEqualTo("빌링키 제거");
 	}
 }
