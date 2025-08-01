@@ -9,24 +9,28 @@ import com.grow.payment_service.payment.application.service.PaymentBatchService;
 
 import lombok.extern.slf4j.Slf4j;
 
-
 @Slf4j
 @Component
-public class MonthlyAutoChargeJob implements Job {
+public class PaymentAutoChargeJob implements Job {
 
+	public static final String KEY_PAYMENT_ID = "paymentId";
 	private final PaymentBatchService paymentBatchService;
 
-	public MonthlyAutoChargeJob(PaymentBatchService paymentBatchService) {
+	public PaymentAutoChargeJob(PaymentBatchService paymentBatchService) {
 		this.paymentBatchService = paymentBatchService;
 	}
 
 	/**
-	 * 매월 1일 0시에 실행되는 자동 결제 작업을 수행합니다.
+	 * 개별 결제 자동결제 실행
+	 * - paymentId 하나만 처리
 	 */
 	@Override
 	public void execute(JobExecutionContext ctx) throws JobExecutionException {
-		log.info("[자동 결제] MonthlyAutoChargeJob 실행 시작");
-		paymentBatchService.processMonthlyAutoCharge();
-		log.info("[자동 결제] MonthlyAutoChargeJob 실행 완료");
+		long paymentId = ctx.getJobDetail()
+			.getJobDataMap()
+			.getLong(KEY_PAYMENT_ID);
+		log.info("[자동결제 Job 시작] paymentId={}", paymentId);
+		paymentBatchService.processSingleAutoCharge(paymentId);
+		log.info("[자동결제 Job 완료] paymentId={}", paymentId);
 	}
 }

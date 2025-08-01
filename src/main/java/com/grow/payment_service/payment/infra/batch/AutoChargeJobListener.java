@@ -1,4 +1,3 @@
-// AutoChargeJobListener.java
 package com.grow.payment_service.payment.infra.batch;
 
 import java.util.concurrent.ThreadLocalRandom;
@@ -32,27 +31,34 @@ public class AutoChargeJobListener extends JobListenerSupport {
 	}
 
 	/**
-	 * 자동결제 Job 실행 후 결과를 감지하여,
-	 * 실패 시 지수 백오프 전략으로 재시도 트리거를 생성합니다.
+	 * PaymentAutoChargeJob 실행 후 호출
+	 * - 성공: retryCount 초기화 + JobDetail 삭제
+	 * - 실패: retryCount < maxRetry -> 지수 백오프 재시도
+	 *         retryCount ≥ maxRetry -> 영구 실패 처리 + JobDetail 삭제
 	 */
 	@Override
 	public void jobWasExecuted(JobExecutionContext ctx, JobExecutionException jobEx) {
 		JobKey key = ctx.getJobDetail().getKey();
 		JobDataMap data = ctx.getJobDetail().getJobDataMap();
+		int retryCount = data.getInt("retryCount");
+		int maxRetry   = data.getInt("maxRetry");
 
 		if (jobEx == null) {
-			// 성공 시 retryCount 초기화
+			// 성공 시
 			data.put("retryCount", 0);
-			log.info("[Listener] {} 성공, retryCount 초기화", key);
+			log.info("[Listener] {} 성공, JobDetail 삭제", key);
+			try {
+				scheduler.deleteJob(key);
+			} catch (SchedulerException e) {
+				log.error("[Listener] Job 삭제 실패: {}", key, e);
+			}
 			return;
 		}
 
-		// 실패 시 재시도
-		int retryCount = data.getInt("retryCount") + 1;
-		int maxRetry   = data.getInt("maxRetry");
+		// 실패 시 재시도 카운트 증가
+		retryCount++;
 		data.put("retryCount", retryCount);
-
-		log.warn("[자동 결제] {} 실패 감지: {}, retryCount={}/{}", key, jobEx.getMessage(), retryCount, maxRetry);
+		log.warn("[자동결제] {} 실패: {}, retryCount={}/{}", key, jobEx.getMessage(), retryCount, maxRetry);
 
 		if (retryCount < maxRetry) {
 			// 지수 백오프 계산 + 동시에 몰려서 재시도 하는 현상을 방지하기 위해 Jitter 추가 (delay를 랜덤하게 조정)
@@ -64,7 +70,7 @@ public class AutoChargeJobListener extends JobListenerSupport {
 			int actualDelay  = Math.max(1, delayMin - jitter);
 
 			Trigger retryTrigger = TriggerBuilder.newTrigger()
-				.forJob(ctx.getJobDetail())
+				.forJob(key)
 				.usingJobData(data)
 				.startAt(DateBuilder.futureDate(actualDelay, DateBuilder.IntervalUnit.MINUTE))
 				.build();
@@ -76,12 +82,18 @@ public class AutoChargeJobListener extends JobListenerSupport {
 				log.error("[자동결제] 재시도 Trigger 등록 실패", e);
 			}
 		} else {
-			// 실패 처리 대상 상태: AUTO_BILLING_IN_PROGRESS
-			log.error("[자동결제] 재시도 한계({}회) 도달, 실패 처리", maxRetry, jobEx);
+			// 재시도 한계 도달
+			log.error("[자동결제] 재시도 한계({}) 도달, 실패 처리", maxRetry);
 			try {
 				paymentBatchService.markAutoChargeFailedPermanently();
 			} catch (Exception e) {
-				log.error("[자동결제] 실패 처리 중 추가 예외 발생", e);
+				log.error("[자동결제] 영구 실패 처리 중 예외 발생", e);
+			}
+			try {
+				scheduler.deleteJob(key);
+				log.info("[Listener] {} 최종 실패, JobDetail 삭제", key);
+			} catch (SchedulerException e) {
+				log.error("[Listener] 최종 실패 후 Job 삭제 실패: {}", key, e);
 			}
 		}
 	}

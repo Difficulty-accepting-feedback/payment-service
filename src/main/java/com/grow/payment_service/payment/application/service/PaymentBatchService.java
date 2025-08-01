@@ -9,4 +9,7 @@ public interface PaymentBatchService {
 
 	/** 자동결제 실패 시 재시도 */
 	void markAutoChargeFailedPermanently();
+
+	/** 오늘 결제일인 단일 결제 건만 처리 */
+	void processSingleAutoCharge(Long paymentId);
 }

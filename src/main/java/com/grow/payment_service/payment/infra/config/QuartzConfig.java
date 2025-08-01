@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 
 import com.grow.payment_service.payment.infra.batch.AutoChargeJobListener;
-import com.grow.payment_service.payment.infra.batch.MonthlyAutoChargeJob;
+import com.grow.payment_service.payment.infra.batch.DailyAutoChargeJob;
 
 @Configuration
 public class QuartzConfig {
@@ -21,44 +21,34 @@ public class QuartzConfig {
 		this.autoChargeJobListener = autoChargeJobListener;
 	}
 
-	/**
-	 * 매월 1일 0시에 실행되는 자동 결제 작업의 JobDetail을 생성합니다.
-	 */
+	/** DailyAutoChargeJob Bean 등록 */
 	@Bean
-	public JobDetail monthlyAutoChargeJobDetail() {
-		return JobBuilder.newJob(MonthlyAutoChargeJob.class)
-			.withIdentity("monthlyAutoChargeJob")
+	public JobDetail dailyAutoChargeJobDetail() {
+		return JobBuilder.newJob(DailyAutoChargeJob.class)
+			.withIdentity("dailyAutoChargeJob")
 			.storeDurably()
-			.usingJobData("retryCount", 0)
-			.usingJobData("maxRetry", 5)
 			.build();
 	}
 
-	/**
-	 * 매월 1일 0시에 자동 결제 작업을 트리거합니다.
-	 */
+	/** 매일 0시 DailyAutoChargeJob Trigger */
 	@Bean
-	public Trigger monthlyAutoChargeTrigger(JobDetail monthlyAutoChargeJobDetail) {
+	public Trigger dailyAutoChargeTrigger(JobDetail dailyAutoChargeJobDetail) {
 		return TriggerBuilder.newTrigger()
-			.forJob(monthlyAutoChargeJobDetail)
-			.withIdentity("monthlyAutoChargeTrigger")
-			.withSchedule(CronScheduleBuilder
-				.cronSchedule("0 0 0 1 * ?")
-			)
+			.forJob(dailyAutoChargeJobDetail)
+			.withIdentity("dailyAutoChargeTrigger")
+			.withSchedule(CronScheduleBuilder.cronSchedule("0 0 0 * * ?"))
 			.build();
 	}
 
-	/**
-	 * Quartz 스케줄러 팩토리 빈을 생성합니다.
-	 */
+	/** Quartz Scheduler 설정 */
 	@Bean
 	public SchedulerFactoryBean schedulerFactoryBean(
-		JobDetail monthlyAutoChargeJobDetail,
-		Trigger monthlyAutoChargeTrigger
+		JobDetail dailyAutoChargeJobDetail,
+		Trigger dailyAutoChargeTrigger
 	) {
 		SchedulerFactoryBean factory = new SchedulerFactoryBean();
-		factory.setJobDetails(monthlyAutoChargeJobDetail);
-		factory.setTriggers(monthlyAutoChargeTrigger);
+		factory.setJobDetails(dailyAutoChargeJobDetail);
+		factory.setTriggers(dailyAutoChargeTrigger);
 		factory.setGlobalJobListeners(autoChargeJobListener);
 		return factory;
 	}
