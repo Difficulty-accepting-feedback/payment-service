@@ -67,16 +67,25 @@ public enum PayStatus {
 			entry(CANCEL_REQUESTED, EnumSet.of(CANCELLED)),
 			// 취소 완료 -> 종료(전이 불가)
 			entry(CANCELLED, EnumSet.noneOf(PayStatus.class)),
-			// 자동결제 준비 -> 승인 or 실패 or 중단
+			// 자동결제 준비 -> 승인 or 진행 or 실패 or 중단
 			entry(AUTO_BILLING_READY, EnumSet.of(
-				AUTO_BILLING_APPROVED,
 				AUTO_BILLING_IN_PROGRESS,
+				AUTO_BILLING_APPROVED,
 				AUTO_BILLING_FAILED,
 				ABORTED
 			)),
+			// 자동결제 진행 중 -> 승인 or 실패 or 중단   ← 이 블록을 추가
+			entry(AUTO_BILLING_IN_PROGRESS, EnumSet.of(
+				AUTO_BILLING_APPROVED,
+				AUTO_BILLING_FAILED,
+				ABORTED
+			)),
+			// AUTO_BILLING_APPROVED → 다음 달 READY로 리셋
+			entry(AUTO_BILLING_APPROVED, EnumSet.of(
+				AUTO_BILLING_READY
+			)),
 			// 자동결제 승인/실패 이후 -> 종료
-			entry(AUTO_BILLING_APPROVED, EnumSet.noneOf(PayStatus.class)),
-			entry(AUTO_BILLING_FAILED, EnumSet.noneOf(PayStatus.class)),
+			entry(AUTO_BILLING_FAILED,   EnumSet.noneOf(PayStatus.class)),
 			// 예외·종료 상태들 -> 더 이상의 전이 불가
 			entry(ABORTED, EnumSet.noneOf(PayStatus.class)),
 			entry(EXPIRED, EnumSet.noneOf(PayStatus.class)),

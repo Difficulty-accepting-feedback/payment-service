@@ -168,13 +168,35 @@ public class Payment {
 		);
 	}
 
-	/** 결제 승인 후 취소 상태 전이 */
+	/** 강제 취소 상태 전이 */
 	public Payment forceCancel(CancelReason reason) {
 		return new Payment(
 			paymentId, memberId, planId, orderId,
 			paymentKey, billingKey, customerKey,
 			totalAmount, PayStatus.CANCELLED,
 			method, failureReason, reason
+		);
+	}
+
+
+	/** 자동결제 승인 후 다음 달 자동결제를 위해 READY 상태로 리셋 */
+	public Payment resetForNextCycle() {
+		if (!this.payStatus.canTransitionTo(AUTO_BILLING_READY)) {
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_READY);
+		}
+		return new Payment(
+			paymentId,
+			memberId,
+			planId,
+			orderId,
+			paymentKey,
+			billingKey,
+			customerKey,
+			totalAmount,
+			AUTO_BILLING_READY,   // 다시 준비 상태
+			method,
+			null,                 // 실패 사유 초기화
+			null                  // 취소 사유 초기화
 		);
 	}
 
