@@ -25,7 +25,9 @@ public enum ErrorCode {
 
 	// Saga 에러
 	SAGA_COMPENSATE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "500-SAGA_COMPENSATE_ERROR", "saga.compensate.error"),
-	SAGA_COMPENSATE_COMPLETED(HttpStatus.INTERNAL_SERVER_ERROR,"500-SAGA_COMPENSATE_COMPLETED","saga.compensate.completed");
+	SAGA_COMPENSATE_COMPLETED(HttpStatus.INTERNAL_SERVER_ERROR, "500-SAGA_COMPENSATE_COMPLETED","saga.compensate.completed"),
+	IDEMPOTENCY_IN_FLIGHT(HttpStatus.CONFLICT, "409-IDEMPOTENCY_IN_FLIGHT", "idempotency.in.flight");
+
 	private final HttpStatus status;
 	private final String code;
 	private final String messageCode;
