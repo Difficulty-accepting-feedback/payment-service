@@ -2,7 +2,6 @@ package com.grow.payment_service.payment.saga;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
-import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,29 +10,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import com.grow.payment_service.PaymentServiceApplication;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
-import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
-import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
-import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
+import com.grow.payment_service.payment.global.exception.ErrorCode;
+import com.grow.payment_service.payment.global.exception.PaymentSagaException;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
+import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
 
 @SpringBootTest(classes = PaymentSagaOrchestrator.class)
 class PaymentSagaOrchestratorTest {
 
-	// saga 빈만 로드
 	@Autowired
 	private PaymentSagaOrchestrator saga;
 
-	// 의존성은 모두 @MockBean 으로 대체
 	@MockitoBean
 	private PaymentGatewayPort gatewayPort;
 
@@ -46,9 +44,8 @@ class PaymentSagaOrchestratorTest {
 	@MockitoBean
 	private PaymentPersistenceService persistenceService;
 
-
 	@Test
-	@DisplayName("confirmWithCompensation: 성공 시 gateway → retryableService 호출")
+	@DisplayName("confirmWithCompensation: 성공 시 reserve → gateway → retryable → finish 호출")
 	void confirmWithCompensation_success() {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(true);
 		willDoNothing().given(gatewayPort).confirmPayment("key", "order1", 1000);
@@ -57,32 +54,47 @@ class PaymentSagaOrchestratorTest {
 		Long result = saga.confirmWithCompensation("key", "order1", 1000, "idem-key");
 
 		assertThat(result).isEqualTo(42L);
-		InOrder o = inOrder(gatewayPort, retryableService);
+		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
+		o.verify(idempotencyAdapter).reserve("idem-key");
 		o.verify(gatewayPort).confirmPayment("key", "order1", 1000);
 		o.verify(retryableService).saveConfirmation("key", "order1", 1000);
+		o.verify(idempotencyAdapter).finish("idem-key", "42");
+		verify(idempotencyAdapter, never()).invalidate(anyString());
 	}
 
-
 	@Test
-	@DisplayName("confirmWithCompensation: reserve=false 면 기존 결제ID 리턴")
+	@DisplayName("confirmWithCompensation: reserve=false and getResult!=null 이면 이전 결과 반환")
 	void confirmWithCompensation_idempotentBranch() {
-		// 이미 처리된 키
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(false);
-		// persistenceService.findByOrderId 로부터 기존 결제 객체 리턴
-		Payment existing = mock(Payment.class);
-		given(existing.getPaymentId()).willReturn(77L);
-		given(persistenceService.findByOrderId("order1")).willReturn(existing);
+		given(idempotencyAdapter.getResult("idem-key")).willReturn("77");
 
 		Long result = saga.confirmWithCompensation("key", "order1", 1000, "idem-key");
 
 		assertThat(result).isEqualTo(77L);
-		// gatewayPort, retryableService 호출 없이 바로 리턴
+		verify(idempotencyAdapter).reserve("idem-key");
+		verify(idempotencyAdapter).getResult("idem-key");
+		verifyNoInteractions(gatewayPort, retryableService, persistenceService);
+	}
+
+	@Test
+	@DisplayName("confirmWithCompensation: reserve=false and getResult==null 이면 in-flight 예외")
+	void confirmWithCompensation_inFlight() {
+		given(idempotencyAdapter.reserve("idem-key")).willReturn(false);
+		given(idempotencyAdapter.getResult("idem-key")).willReturn(null);
+
+		assertThatThrownBy(() ->
+			saga.confirmWithCompensation("key", "order1", 1000, "idem-key")
+		).isInstanceOf(PaymentSagaException.class)
+			.extracting("errorCode")
+			.isEqualTo(ErrorCode.IDEMPOTENCY_IN_FLIGHT);
+
+		verify(idempotencyAdapter).reserve("idem-key");
+		verify(idempotencyAdapter).getResult("idem-key");
 		verifyNoInteractions(gatewayPort, retryableService);
 	}
 
-
 	@Test
-	@DisplayName("confirmWithCompensation: 저장 실패 시 예외 전파")
+	@DisplayName("confirmWithCompensation: 저장 실패 시 invalidate 후 예외 전파")
 	void confirmWithCompensation_failure_propagates() {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(true);
 		willDoNothing().given(gatewayPort).confirmPayment("key", "order1", 1000);
@@ -94,8 +106,12 @@ class PaymentSagaOrchestratorTest {
 		).isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("보상 실패");
 
-		then(gatewayPort).should().confirmPayment("key", "order1", 1000);
-		then(retryableService).should().saveConfirmation("key", "order1", 1000);
+		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
+		o.verify(idempotencyAdapter).reserve("idem-key");
+		o.verify(gatewayPort).confirmPayment("key", "order1", 1000);
+		o.verify(retryableService).saveConfirmation("key", "order1", 1000);
+		o.verify(idempotencyAdapter).invalidate("idem-key");
+		verify(idempotencyAdapter, never()).finish(anyString(), anyString());
 	}
 
 	@Test
@@ -125,7 +141,6 @@ class PaymentSagaOrchestratorTest {
 		TossBillingAuthResponse tossAuth = mock(TossBillingAuthResponse.class);
 		given(tossAuth.getBillingKey()).willReturn("bk123");
 		given(gatewayPort.issueBillingKey("a", "c")).willReturn(tossAuth);
-
 		given(retryableService.saveBillingKey("order1", "bk123"))
 			.willReturn(new PaymentIssueBillingKeyResponse("bk123"));
 
@@ -144,7 +159,7 @@ class PaymentSagaOrchestratorTest {
 	}
 
 	@Test
-	@DisplayName("autoChargeWithCompensation: 성공 시 gateway → retryableService 호출")
+	@DisplayName("autoChargeWithCompensation: 성공 시 reserve → gateway → retryable → finish 호출")
 	void autoChargeWithCompensation_success() {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(true);
 
@@ -166,18 +181,21 @@ class PaymentSagaOrchestratorTest {
 		PaymentConfirmResponse res = saga.autoChargeWithCompensation(param, "idem-key");
 
 		assertThat(res.getPayStatus()).isEqualTo("DONE");
-		InOrder o = inOrder(gatewayPort, retryableService);
+		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
+		o.verify(idempotencyAdapter).reserve("idem-key");
 		o.verify(gatewayPort).chargeWithBillingKey(
 			eq("bkey"), eq("ckey"), eq(500), eq("oid"),
 			eq("order"), eq("e@mail"), eq("name"), eq(0), eq(0)
 		);
 		o.verify(retryableService).saveAutoCharge("bkey", "oid", 500, tossCharge);
+		o.verify(idempotencyAdapter).finish("idem-key", "99");
 	}
 
 	@Test
-	@DisplayName("autoChargeWithCompensation: reserve=false 면 기존 상태 리턴")
+	@DisplayName("autoChargeWithCompensation: reserve=false and getResult!=null 이면 이전 상태 반환")
 	void autoChargeWithCompensation_idempotentBranch() {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(false);
+		given(idempotencyAdapter.getResult("idem-key")).willReturn("55");
 
 		Payment existing = mock(Payment.class);
 		given(existing.getPaymentId()).willReturn(55L);
@@ -186,12 +204,15 @@ class PaymentSagaOrchestratorTest {
 
 		var param = PaymentAutoChargeParam.builder()
 			.billingKey("bkey").orderId("oid")
-			.build();  // 나머지 필드 생략해도 무방
+			.build();
 
 		PaymentConfirmResponse res = saga.autoChargeWithCompensation(param, "idem-key");
 		assertThat(res.getPaymentId()).isEqualTo(55L);
 		assertThat(res.getPayStatus()).isEqualTo("AUTO_BILLING_IN_PROGRESS");
 
+		verify(idempotencyAdapter).reserve("idem-key");
+		verify(idempotencyAdapter).getResult("idem-key");
+		verify(persistenceService).findByOrderId("oid");
 		verifyNoInteractions(gatewayPort, retryableService);
 	}
 }
