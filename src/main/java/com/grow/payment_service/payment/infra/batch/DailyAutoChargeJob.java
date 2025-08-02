@@ -14,7 +14,6 @@ import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
 import org.springframework.stereotype.Component;
 
-import com.grow.payment_service.payment.application.service.PaymentBatchService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;

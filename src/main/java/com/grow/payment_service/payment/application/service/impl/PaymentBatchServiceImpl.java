@@ -26,7 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
-@Transactional
 @RequiredArgsConstructor
 public class PaymentBatchServiceImpl implements PaymentBatchService {
 
@@ -210,6 +209,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	 * 6. APPROVED -> READY 리셋(다음 달 준비) 및 이력 저장
 	 */
 	@Override
+	@Transactional
 	public void processSingleAutoCharge(Long paymentId) {
 		Payment p = paymentRepository.findById(paymentId)
 			.orElseThrow(() -> new PaymentApplicationException(
