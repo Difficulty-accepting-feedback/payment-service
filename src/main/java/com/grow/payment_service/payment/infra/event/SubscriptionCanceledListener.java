@@ -14,8 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@DisallowConcurrentExecution
-@PersistJobDataAfterExecution
 public class SubscriptionCanceledListener {
 
 	private final PaymentBatchService paymentBatchService;

@@ -34,10 +34,11 @@ public class PaymentController {
 	/** 결제 승인 */
 	@PostMapping("/confirm")
 	public ResponseEntity<RsData<Long>> confirmPayment(
+		@RequestHeader("Idempotency-Key") String idempotencyKey,
 		@RequestBody @Valid PaymentConfirmRequest req
 	) {
 		Long paymentId = paymentService.confirmPayment(
-			req.getPaymentKey(), req.getOrderId(), req.getAmount()
+			req.getPaymentKey(), req.getOrderId(), req.getAmount(), idempotencyKey
 		);
 		return ResponseEntity.ok(
 			new RsData<>("200", "결제 승인 성공", paymentId)
@@ -82,6 +83,7 @@ public class PaymentController {
 	/** 자동결제 승인(빌링키 결제) */
 	@PostMapping("/billing/charge")
 	public ResponseEntity<RsData<PaymentConfirmResponse>> chargeWithBillingKey(
+		@RequestHeader("Idempotency-Key") String idempotencyKey,
 		@Valid @RequestBody PaymentAutoChargeRequest req
 	) {
 		PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
@@ -96,7 +98,7 @@ public class PaymentController {
 			.taxExemptionAmount(req.getTaxExemptionAmount())
 			.build();
 
-		PaymentConfirmResponse res = paymentService.chargeWithBillingKey(param);
+		PaymentConfirmResponse res = paymentService.chargeWithBillingKey(param, idempotencyKey);
 
 		return ResponseEntity.ok(
 			new RsData<>("200", "자동결제 승인 성공", res)

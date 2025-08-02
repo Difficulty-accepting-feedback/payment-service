@@ -30,15 +30,14 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PaymentApplicationServiceImpl implements PaymentApplicationService {
 
+	private static final String SUCCESS_URL = "http://localhost:8080/confirm"; // 임시 값
+	private static final String FAIL_URL = "http://localhost:8080/confirm?fail";  // 임시 값
 	private final PaymentGatewayPort gatewayPort;
 	private final PaymentPersistenceService persistenceService;
 	private final OrderIdGenerator orderIdGenerator;
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
 	private final PaymentSagaOrchestrator paymentSaga;
-
-	private static final String SUCCESS_URL = "http://localhost:8080/confirm"; // 임시 값
-	private static final String FAIL_URL    = "http://localhost:8080/confirm?fail";  // 임시 값
 
 	/**
 	 * 주문 DB 생성 후 클라이언트에게 데이터 반환
@@ -57,7 +56,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				memberId, planId, orderId,
 				null, null,
 				"cust_" + memberId,
-				(long) amount,
+				(long)amount,
 				"CARD"
 			);
 			payment = paymentRepository.save(payment);
@@ -75,7 +74,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				amount,
 				"GROW Plan #" + orderId,
 				SUCCESS_URL + "?memberId=" + memberId + "&planId=" + planId,
-				FAIL_URL    + "?memberId=" + memberId + "&planId=" + planId
+				FAIL_URL + "?memberId=" + memberId + "&planId=" + planId
 			);
 		} catch (Exception ex) {
 			log.error("주문 생성 실패: memberId={}, planId={}, amount={}", memberId, planId, amount, ex);
@@ -88,9 +87,9 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 *  (외부 API 호출 ↔ DB 저장 분리, SAGA 위임)
 	 */
 	@Override
-	public Long confirmPayment(String paymentKey, String orderId, int amount) {
+	public Long confirmPayment(String paymentKey, String orderId, int amount, String idempotencyKey) {
 		try {
-			return paymentSaga.confirmWithCompensation(paymentKey, orderId, amount);
+			return paymentSaga.confirmWithCompensation(paymentKey, orderId, amount, idempotencyKey);
 		} catch (Exception ex) {
 			log.error("결제 승인 실패: paymentKey={}, orderId={}, amount={}", paymentKey, orderId, amount, ex);
 			throw new PaymentApplicationException(ErrorCode.PAYMENT_CONFIRM_ERROR, ex);
@@ -136,9 +135,9 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 *  (외부 API 호출 ↔ DB 저장 분리, SAGA 위임)
 	 */
 	@Override
-	public PaymentConfirmResponse chargeWithBillingKey(PaymentAutoChargeParam param) {
+	public PaymentConfirmResponse chargeWithBillingKey(PaymentAutoChargeParam param, String idempotencyKey) {
 		try {
-			return paymentSaga.autoChargeWithCompensation(param);
+			return paymentSaga.autoChargeWithCompensation(param, idempotencyKey);
 		} catch (Exception ex) {
 			log.error("자동결제 승인 실패: billingKey={}, orderId={}",
 				param.getBillingKey(), param.getOrderId(), ex);
