@@ -85,7 +85,7 @@ public enum PayStatus {
 				AUTO_BILLING_READY
 			)),
 			// 자동결제 승인/실패 이후 -> 종료
-			entry(AUTO_BILLING_FAILED,   EnumSet.noneOf(PayStatus.class)),
+			entry(AUTO_BILLING_FAILED,   EnumSet.of(ABORTED)),
 			// 예외·종료 상태들 -> 더 이상의 전이 불가
 			entry(ABORTED, EnumSet.noneOf(PayStatus.class)),
 			entry(EXPIRED, EnumSet.noneOf(PayStatus.class)),
