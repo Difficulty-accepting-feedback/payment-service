@@ -13,4 +13,6 @@ public interface PaymentRepository {
 	List<Payment> findAllByMemberId(Long memberId);
 	/** 빌링키 준비 완료된 건(월간 자동청구 대상) 조회 */
 	List<Payment> findAllByPayStatusAndBillingKeyIsNotNull(PayStatus payStatus);
+	/** PESSIMISTIC_WRITE 락 모드로 조회 */
+	Optional<Payment> findByOrderIdForUpdate(String orderId);
 }

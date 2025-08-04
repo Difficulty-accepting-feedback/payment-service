@@ -21,6 +21,7 @@ import com.grow.payment_service.payment.infra.paymentprovider.TossPaymentClient;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -253,28 +254,30 @@ class PaymentBatchServiceImplTest {
 	}
 
 	@Test
-	void markAutoChargeFailedPermanently_transitionsAllInProgressToFailedAndClearsKeys() {
-		// 준비: IN_PROGRESS 상태의 결제
-		Payment base = setupReadyPayment();
+	@DisplayName("markAutoChargeFailedPermanently: IN_PROGRESS → FAILED → ABORTED 순으로 전이")
+	void markAutoChargeFailedPermanently_transitionsInProgressToFailedThenAborted() {
+		// 준비: AUTO_BILLING_IN_PROGRESS 상태
+		Payment base       = setupReadyPayment();
 		Payment inProgress = base.startAutoBilling();
 		given(paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_IN_PROGRESS))
 			.willReturn(List.of(inProgress));
 
-		// save()는 입력 객체를 그대로 반환
+		// save()는 인자로 받은 객체를 그대로 반환
 		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
+		// 실행
 		batchService.markAutoChargeFailedPermanently();
 
-		// 실패 처리된 건이 save 됐는지 검증
-		then(paymentRepository).should().save(paymentCaptor.capture());
-		Payment cleared = paymentCaptor.getValue();
-		assertThat(cleared.getPayStatus()).isEqualTo(PayStatus.AUTO_BILLING_FAILED);
-		assertThat(cleared.getBillingKey()).isNull();
+		// save()는 한 번만 호출되어 최종 ABORTED 상태여야 함
+		then(paymentRepository).should(times(1)).save(paymentCaptor.capture());
+		Payment saved = paymentCaptor.getValue();
+		assertThat(saved.getPayStatus()).isEqualTo(PayStatus.ABORTED);
+		assertThat(saved.getBillingKey()).isNull();
 
-		// 이력 저장 검증
-		then(historyRepository).should().save(historyCaptor.capture());
+		// history도 한 번만 기록, 상태는 ABORTED, reasonDetail에 '취소' 포함
+		then(historyRepository).should(times(1)).save(historyCaptor.capture());
 		PaymentHistory hist = historyCaptor.getValue();
-		assertThat(hist.getStatus()).isEqualTo(PayStatus.AUTO_BILLING_FAILED);
-		assertThat(hist.getReasonDetail()).isEqualTo("자동결제 재시도 한계 도달 -> 실패 처리 및 빌링키 제거");
+		assertThat(hist.getStatus()).isEqualTo(PayStatus.ABORTED);
+		assertThat(hist.getReasonDetail()).contains("빌링키 제거");
 	}
 }

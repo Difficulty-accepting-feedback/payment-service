@@ -52,4 +52,11 @@ public class PaymentRepositoryImpl implements PaymentRepository {
 			.map(PaymentMapper::toDomain)
 			.toList();
 	}
+
+	@Override
+	public Optional<Payment> findByOrderIdForUpdate(String orderId) {
+		return paymentJpaRepository
+			.findByOrderIdForUpdate(orderId)
+			.map(PaymentMapper::toDomain);
+	}
 }

@@ -46,11 +46,12 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		return payment.getPaymentId();
 	}
 
-	/** 결제 취소 요청 후 DB 저장 */
+	/** 결제 취소 요청 후 DB 저장 (Pessimistic Lock 적용) */
 	@Override
 	@Transactional
 	public PaymentCancelResponse requestCancel(String orderId, CancelReason reason, int amount) {
-		Payment payment = paymentRepository.findByOrderId(orderId)
+		// 락 모드로 조회
+		Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
 
 		// 이미 요청됐거나 완료된 경우 무시
@@ -72,11 +73,12 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
 	}
 
-	/** 결제 취소 완료 후 DB 저장 */
+	/** 결제 취소 완료 후 DB 저장 (Pessimistic Lock 적용) */
 	@Override
 	@Transactional
 	public PaymentCancelResponse completeCancel(String orderId) {
-		Payment payment = paymentRepository.findByOrderId(orderId)
+		// 락 모드로 조회
+		Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
 
 		// 취소 요청 상태가 아니면 무시
@@ -98,15 +100,18 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
 	}
 
-	/** 빌링키 등록 후 DB 저장 */
+	/** 빌링키 등록 후 DB 저장 (Pessimistic Lock 적용) */
 	@Override
 	@Transactional
 	public PaymentIssueBillingKeyResponse saveBillingKeyRegistration(
 		String orderId,
 		String billingKey
 	) {
-		Payment payment = paymentRepository.findByOrderId(orderId)
+		// 락 모드로 조회
+		Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
+
+		// 빌링키 등록 상태 전이
 		payment = payment.registerBillingKey(billingKey);
 		paymentRepository.save(payment);
 		historyRepository.save(

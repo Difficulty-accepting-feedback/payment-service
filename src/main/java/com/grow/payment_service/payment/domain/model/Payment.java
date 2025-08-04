@@ -2,6 +2,8 @@ package com.grow.payment_service.payment.domain.model;
 
 import static com.grow.payment_service.payment.domain.model.enums.PayStatus.*;
 
+import java.util.EnumSet;
+
 import com.grow.payment_service.payment.domain.exception.PaymentDomainException;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.FailureReason;
@@ -101,7 +103,7 @@ public class Payment {
 
 	/** 빌링키 등록 후 상태 전이 */
 	public Payment registerBillingKey(String billingKey) {
-		if (!this.payStatus.canTransitionTo(AUTO_BILLING_READY))
+		if (this.payStatus != READY)
 			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_READY);
 		return new Payment(
 			paymentId, memberId, planId, orderId,
@@ -135,20 +137,26 @@ public class Payment {
 		);
 	}
 
+
     /** 자동결제 중단 -> 빌링 키 제거 */
 	public Payment clearBillingKey() {
+		if (!EnumSet.of(PayStatus.AUTO_BILLING_READY, PayStatus.AUTO_BILLING_IN_PROGRESS, PayStatus.AUTO_BILLING_FAILED)
+			.contains(this.payStatus)) {
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, PayStatus.ABORTED);
+		}
+		// 2) 빌링키 제거 + 상태 전이
 		return new Payment(
 			this.paymentId,
 			this.memberId,
 			this.planId,
 			this.orderId,
 			this.paymentKey,
-			null,               // billingKey 제거
+			null,
 			this.customerKey,
 			this.totalAmount,
-			this.payStatus,
+			PayStatus.ABORTED,
 			this.method,
-			this.failureReason,
+			null,
 			this.cancelReason
 		);
 	}
@@ -181,7 +189,7 @@ public class Payment {
 
 	/** 자동결제 승인 후 다음 달 자동결제를 위해 READY 상태로 리셋 */
 	public Payment resetForNextCycle() {
-		if (!this.payStatus.canTransitionTo(AUTO_BILLING_READY)) {
+		if (this.payStatus != PayStatus.AUTO_BILLING_APPROVED) {
 			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_READY);
 		}
 		return new Payment(
