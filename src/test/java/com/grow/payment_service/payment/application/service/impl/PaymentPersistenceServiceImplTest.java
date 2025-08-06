@@ -18,7 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
-import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;

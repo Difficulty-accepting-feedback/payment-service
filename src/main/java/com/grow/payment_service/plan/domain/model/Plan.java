@@ -31,6 +31,9 @@ public class Plan {
 		this.benefits  = benefits;
 	}
 
+	/**
+	 * 신규 구독 생성
+	 */
 	public static Plan create(PlanType type,
 		Long amount,
 		PlanPeriod period,

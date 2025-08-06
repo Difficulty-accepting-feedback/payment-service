@@ -18,7 +18,7 @@ import com.grow.payment_service.payment.domain.repository.PaymentHistoryReposito
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.saga.PaymentSagaOrchestrator;
 
 @ExtendWith(MockitoExtension.class)

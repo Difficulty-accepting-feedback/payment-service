@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.global.exception;
+package com.grow.payment_service.global.exception;
 
 
 import lombok.Getter;

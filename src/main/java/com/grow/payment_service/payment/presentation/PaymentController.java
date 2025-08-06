@@ -5,7 +5,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.grow.payment_service.payment.application.dto.*;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
-import com.grow.payment_service.payment.global.dto.RsData;
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.payment.presentation.dto.*;
 
 import jakarta.validation.Valid;

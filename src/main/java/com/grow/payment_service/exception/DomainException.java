@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.common.exception;
+package com.grow.payment_service.exception;
 
 
 public class DomainException extends RuntimeException {

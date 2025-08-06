@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.global.exception.message;
+package com.grow.payment_service.global.exception.message;
 
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;

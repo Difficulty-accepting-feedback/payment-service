@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.global.dto;
+package com.grow.payment_service.global.dto;
 
 import org.springframework.lang.NonNull;
 

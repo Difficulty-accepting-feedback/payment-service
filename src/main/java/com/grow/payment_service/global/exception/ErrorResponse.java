@@ -1,8 +1,9 @@
-package com.grow.payment_service.payment.global.exception;
+package com.grow.payment_service.global.exception;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import com.grow.payment_service.payment.global.exception.message.MessageService;
+
+import com.grow.payment_service.global.exception.message.MessageService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Builder;
