@@ -1,5 +1,6 @@
 package com.grow.payment_service.payment.infra.batch;
 
+import java.time.LocalDateTime;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.quartz.*;
@@ -7,6 +8,8 @@ import org.quartz.listeners.JobListenerSupport;
 import org.springframework.stereotype.Component;
 
 import com.grow.payment_service.payment.application.service.PaymentBatchService;
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -16,13 +19,15 @@ public class AutoChargeJobListener extends JobListenerSupport {
 
 	public static final String LISTENER_NAME = "AutoChargeListener";
 
-	private final Scheduler scheduler;
 	private final PaymentBatchService paymentBatchService;
+	private final SubscriptionHistoryApplicationService subscriptionService;
 
-	public AutoChargeJobListener(Scheduler scheduler,
-		PaymentBatchService paymentBatchService) {
-		this.scheduler = scheduler;
+	public AutoChargeJobListener(
+		PaymentBatchService paymentBatchService,
+		SubscriptionHistoryApplicationService subscriptionService
+	) {
 		this.paymentBatchService = paymentBatchService;
+		this.subscriptionService = subscriptionService;
 	}
 
 	@Override
@@ -42,6 +47,7 @@ public class AutoChargeJobListener extends JobListenerSupport {
 		JobDataMap data = ctx.getJobDetail().getJobDataMap();
 		int retryCount = data.getInt("retryCount");
 		int maxRetry   = data.getInt("maxRetry");
+		Scheduler scheduler = ctx.getScheduler();
 
 		if (jobEx == null) {
 			// 성공 시
@@ -86,6 +92,18 @@ public class AutoChargeJobListener extends JobListenerSupport {
 			log.error("[자동결제] 재시도 한계({}) 도달, 실패 처리", maxRetry);
 			try {
 				paymentBatchService.markAutoChargeFailedPermanently();
+
+				// 재시도 한계 도달 → 구독 만료 기록
+				Long memberId = data.getLong("memberId");
+				LocalDateTime now = LocalDateTime.now();
+				subscriptionService.recordExpiry(
+					memberId,
+					PlanPeriod.MONTHLY,
+					now.minusMonths(1),
+					now,
+					now
+				);
+				log.info("[구독만료] memberId={} 만료 기록", memberId);
 			} catch (Exception e) {
 				log.error("[자동결제] 영구 실패 처리 중 예외 발생", e);
 			}

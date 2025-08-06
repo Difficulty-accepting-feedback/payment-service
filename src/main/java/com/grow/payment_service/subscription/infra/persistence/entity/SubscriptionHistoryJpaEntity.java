@@ -2,6 +2,8 @@ package com.grow.payment_service.subscription.infra.persistence.entity;
 
 import java.time.LocalDateTime;
 
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -33,6 +35,9 @@ public class SubscriptionHistoryJpaEntity {
     @Column(name = "subscriptionStatus", nullable = false, updatable = false)
     private SubscriptionStatus subscriptionStatus; // 구독 상태
 
+    @Column(nullable = false, updatable = false)
+    private PlanPeriod period;
+
     @Column(name = "startAt",  nullable = false, updatable = false)
     private LocalDateTime startAt; // 구독 시작 날짜
 
@@ -46,12 +51,14 @@ public class SubscriptionHistoryJpaEntity {
     public SubscriptionHistoryJpaEntity(
         Long memberId,
         SubscriptionStatus subscriptionStatus,
+        PlanPeriod period,
         LocalDateTime startAt,
         LocalDateTime endAt,
         LocalDateTime changeAt
     ) {
         this.memberId           = memberId;
         this.subscriptionStatus = subscriptionStatus;
+        this.period             = period;
         this.startAt            = startAt;
         this.endAt              = endAt;
         this.changeAt           = changeAt;

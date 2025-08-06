@@ -72,6 +72,7 @@ public class DailyAutoChargeJob implements Job {
 				JobDetail job = JobBuilder.newJob(PaymentAutoChargeJob.class)
 					.withIdentity(jobKey, "autoChargeGroup")
 					.usingJobData(PaymentAutoChargeJob.KEY_PAYMENT_ID, p.getPaymentId())
+					.usingJobData("memberId", p.getMemberId())
 					.usingJobData("retryCount", 0)
 					.usingJobData("maxRetry", 5)
 					.build();

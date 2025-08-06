@@ -22,6 +22,7 @@ public enum ErrorCode {
 	PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "404-1", "payment.not.found"),
 	BATCH_AUTO_CHARGE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "500-6","batch.auto.charge.failed"),
 	BATCH_CLEAR_BILLINGKEY_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "500-7","batch.clear.billingkey.failed"),
+	PAYMENT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "403-0", "payment.access.denied"),
 
 	// Saga 에러
 	SAGA_COMPENSATE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "500-8", "saga.compensate.error"),
