@@ -1,14 +1,20 @@
 package com.grow.payment_service.payment.application.dto;
 
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+import com.grow.payment_service.plan.domain.model.enums.PlanType;
+
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 @Getter
 @AllArgsConstructor
 public class PaymentInitResponse {
-	private String orderId;
-	private int amount;
-	private String orderName;
-	private String successUrl; // 위젯 성공 콜백
-	private String failUrl; // 위젯 실패 콜백
+	private final String orderId;
+	private final int amount;
+	private final String orderName;
+	private final String successUrl;
+	private final String failUrl;
+	private final Long planId;
+	private final PlanType planType;
+	private final PlanPeriod planPeriod;
 }
