@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.global.exception;
+package com.grow.payment_service.global.exception;
 
 import org.springframework.http.HttpStatus;
 
@@ -26,8 +26,10 @@ public enum ErrorCode {
 	// Saga 에러
 	SAGA_COMPENSATE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "500-8", "saga.compensate.error"),
 	SAGA_COMPENSATE_COMPLETED(HttpStatus.INTERNAL_SERVER_ERROR, "500-9","saga.compensate.completed"),
-	IDEMPOTENCY_IN_FLIGHT(HttpStatus.CONFLICT, "409-0", "idempotency.in.flight");
+	IDEMPOTENCY_IN_FLIGHT(HttpStatus.CONFLICT, "409-0", "idempotency.in.flight"),
 
+	// 구독 내역 도메인
+	SUBSCRIPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "404-4", "subscription.not.found");
 	private final HttpStatus status;
 	private final String code;
 	private final String messageCode;
