@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionHistoryJpaEntity;
-import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionStatus;
+import com.grow.payment_service.subscription.domain.model.SubscriptionStatus;
 import com.grow.payment_service.subscription.infra.persistence.repository.SubscriptionHistoryJpaRepository;
 
 import lombok.RequiredArgsConstructor;

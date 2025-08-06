@@ -3,6 +3,7 @@ package com.grow.payment_service.subscription.infra.persistence.entity;
 import java.time.LocalDateTime;
 
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+import com.grow.payment_service.subscription.domain.model.SubscriptionStatus;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

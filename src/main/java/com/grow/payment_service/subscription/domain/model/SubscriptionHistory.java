@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
-import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionStatus;
 
 import lombok.Getter;
 

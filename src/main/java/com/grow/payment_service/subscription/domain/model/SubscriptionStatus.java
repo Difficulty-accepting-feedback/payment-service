@@ -1,4 +1,4 @@
-package com.grow.payment_service.subscription.infra.persistence.entity;
+package com.grow.payment_service.subscription.domain.model;
 
 public enum SubscriptionStatus {
     ACTIVE,      // 구독 중

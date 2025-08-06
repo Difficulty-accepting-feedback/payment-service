@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionHistoryJpaEntity;
-import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionStatus;
+import com.grow.payment_service.subscription.domain.model.SubscriptionStatus;
 
 public interface SubscriptionHistoryJpaRepository extends JpaRepository<SubscriptionHistoryJpaEntity, Long> {
 	List<SubscriptionHistoryJpaEntity> findAllByMemberId(Long memberId);

@@ -14,7 +14,6 @@ import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;             
 import com.grow.payment_service.subscription.application.dto.SubscriptionHistoryResponse;
 import com.grow.payment_service.subscription.domain.model.SubscriptionHistory;
 import com.grow.payment_service.subscription.domain.repository.SubscriptionHistoryRepository;
-import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionStatus;
 
 import lombok.RequiredArgsConstructor;
 
