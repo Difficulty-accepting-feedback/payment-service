@@ -1,7 +1,7 @@
 package com.grow.payment_service.plan.domain.model;
 
-import com.grow.payment_service.plan.infra.persistence.enums.PlanPeriod;
-import com.grow.payment_service.plan.infra.persistence.enums.PlanType;
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+import com.grow.payment_service.plan.domain.model.enums.PlanType;
 
 import lombok.Builder;
 import lombok.Getter;

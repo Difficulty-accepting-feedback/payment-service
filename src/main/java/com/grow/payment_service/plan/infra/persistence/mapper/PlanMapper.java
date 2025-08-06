@@ -9,9 +9,9 @@ public class PlanMapper {
 		if (e == null) return null;
 		return Plan.of(
 			e.getPlanId(),
-			e.getType(),    // 이미 도메인 enum
+			e.getType(),
 			e.getAmount(),
-			e.getPeriod(),  // 이미 도메인 enum
+			e.getPeriod(),
 			e.getBenefits()
 		);
 	}
