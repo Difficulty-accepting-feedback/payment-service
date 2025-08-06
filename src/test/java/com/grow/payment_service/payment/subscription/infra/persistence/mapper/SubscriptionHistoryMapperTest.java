@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.subscription.infra.persistence.mapper;
+package com.grow.payment_service.subscription.infra.persistence.mapper;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -9,10 +9,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.domain.model.SubscriptionHistory;
 import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionHistoryJpaEntity;
-import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionStatus;
-import com.grow.payment_service.subscription.infra.persistence.mapper.SubscriptionHistoryMapper;
+import com.grow.payment_service.subscription.domain.model.SubscriptionStatus;
 
 class SubscriptionHistoryMapperTest {
 
@@ -24,26 +24,26 @@ class SubscriptionHistoryMapperTest {
 	}
 
 	@Test
-	@DisplayName("toDomain: JPA 엔티티 → 도메인 매핑")
+	@DisplayName("toDomain: JPA 엔티티 → 도메인 매핑 (period 포함)")
 	void toDomain() {
 		// given
 		Long id        = 101L;
 		Long memberId  = 202L;
 		SubscriptionStatus status = SubscriptionStatus.ACTIVE;
+		PlanPeriod period         = PlanPeriod.MONTHLY;
 		LocalDateTime startAt  = LocalDateTime.of(2025, 7, 1, 0, 0);
 		LocalDateTime endAt    = LocalDateTime.of(2025, 7, 31, 23, 59);
 		LocalDateTime changeAt = LocalDateTime.of(2025, 7, 15, 12, 30);
 
-		// 1) 엔티티 빌더로 생성 (ID는 null)
 		SubscriptionHistoryJpaEntity entity = SubscriptionHistoryJpaEntity.builder()
 			.memberId(memberId)
 			.subscriptionStatus(status)
+			.period(period)            // 새로 추가된 필드
 			.startAt(startAt)
 			.endAt(endAt)
 			.changeAt(changeAt)
 			.build();
 
-		// 2) Reflection으로 private 필드에 ID 주입
 		ReflectionTestUtils.setField(entity, "subscriptionHistoryId", id);
 
 		// when
@@ -53,35 +53,42 @@ class SubscriptionHistoryMapperTest {
 		assertThat(domain.getSubscriptionHistoryId()).isEqualTo(id);
 		assertThat(domain.getMemberId()).isEqualTo(memberId);
 		assertThat(domain.getSubscriptionStatus()).isEqualTo(status);
+		assertThat(domain.getPeriod()).isEqualTo(period);
 		assertThat(domain.getStartAt()).isEqualTo(startAt);
 		assertThat(domain.getEndAt()).isEqualTo(endAt);
 		assertThat(domain.getChangeAt()).isEqualTo(changeAt);
 	}
 
 	@Test
-	@DisplayName("toEntity: 도메인 → JPA 엔티티 매핑")
+	@DisplayName("toEntity: 도메인 → JPA 엔티티 매핑 (period 포함)")
 	void toEntity() {
 		// given
 		Long historyId = 303L;
 		Long memberId  = 404L;
 		SubscriptionStatus status = SubscriptionStatus.CANCELED;
+		PlanPeriod period         = PlanPeriod.QUARTERLY;
 		LocalDateTime startAt  = LocalDateTime.of(2025, 6, 1, 8, 0);
 		LocalDateTime endAt    = LocalDateTime.of(2025, 7, 1, 8, 0);
 		LocalDateTime changeAt = LocalDateTime.of(2025, 6, 15, 9, 30);
 
-		// 도메인 객체 생성 (6-arg 생성자)
-		SubscriptionHistory domain = new SubscriptionHistory(
-			historyId, memberId, status, startAt, endAt, changeAt
+		SubscriptionHistory domain = SubscriptionHistory.of(
+			historyId,
+			memberId,
+			status,
+			period,     // 생성자에 period 추가
+			startAt,
+			endAt,
+			changeAt
 		);
 
 		// when
 		SubscriptionHistoryJpaEntity entity = mapper.toEntity(domain);
 
 		// then
-		// 빌더로 생성된 엔티티는 ID(null)
 		assertThat(entity.getSubscriptionHistoryId()).isNull();
 		assertThat(entity.getMemberId()).isEqualTo(memberId);
 		assertThat(entity.getSubscriptionStatus()).isEqualTo(status);
+		assertThat(entity.getPeriod()).isEqualTo(period);   // period 매핑 검증
 		assertThat(entity.getStartAt()).isEqualTo(startAt);
 		assertThat(entity.getEndAt()).isEqualTo(endAt);
 		assertThat(entity.getChangeAt()).isEqualTo(changeAt);

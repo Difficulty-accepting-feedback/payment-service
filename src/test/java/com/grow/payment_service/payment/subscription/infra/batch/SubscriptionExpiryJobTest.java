@@ -1,25 +1,31 @@
 package com.grow.payment_service.payment.subscription.infra.batch;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.BDDMockito.*;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
 
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 import com.grow.payment_service.subscription.infra.batch.SubscriptionExpiryJob;
 import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionHistoryJpaEntity;
-import com.grow.payment_service.subscription.infra.persistence.entity.SubscriptionStatus;
+import com.grow.payment_service.subscription.domain.model.SubscriptionStatus;
 import com.grow.payment_service.subscription.infra.persistence.repository.SubscriptionHistoryJpaRepository;
 
+@ExtendWith(MockitoExtension.class)
 class SubscriptionExpiryJobTest {
 
 	@Mock
-	private SubscriptionHistoryJpaRepository jpaRepo;
+	private SubscriptionHistoryJpaRepository historyJpaRepository;
 
 	@Mock
 	private SubscriptionHistoryApplicationService historyService;
@@ -27,50 +33,71 @@ class SubscriptionExpiryJobTest {
 	@InjectMocks
 	private SubscriptionExpiryJob job;
 
-	@BeforeEach
-	void setUp() {
-		MockitoAnnotations.openMocks(this);
+	@Mock
+	private JobExecutionContext context;
+
+	@Test
+	@DisplayName("execute: 만료 대상 없음")
+	void execute_noExpired() throws JobExecutionException {
+		// given: ACTIVE 상태의 YEARLY 중 만료된 이력 없음
+		given(historyJpaRepository.findExpiredByPeriod(
+			eq(SubscriptionStatus.ACTIVE),
+			any(LocalDateTime.class),
+			eq(PlanPeriod.YEARLY)))
+			.willReturn(Collections.emptyList());
+
+		// when
+		job.execute(context);
+
+		// then: recordExpiry 호출 없어야 함
+		then(historyService).shouldHaveNoInteractions();
 	}
 
 	@Test
-	void execute_whenThereAreExpiredSubscriptions_shouldCallRecordExpiry() throws Exception {
-		// given
-		LocalDateTime now = LocalDateTime.now();
+	@DisplayName("execute: 연간 플랜 만료 처리")
+	void execute_withExpired() throws JobExecutionException {
+		// given: 두 개의 만료된 YEARLY 이력 준비
 		SubscriptionHistoryJpaEntity e1 = SubscriptionHistoryJpaEntity.builder()
-			.memberId(1L)
+			.memberId(100L)
 			.subscriptionStatus(SubscriptionStatus.ACTIVE)
-			.startAt(now.minusMonths(2))
-			.endAt(now.minusDays(1))
-			.changeAt(null)
+			.period(PlanPeriod.YEARLY)
+			.startAt(LocalDateTime.of(2024, 1, 1, 0, 0))
+			.endAt(LocalDateTime.of(2025, 1, 1, 0, 0))
+			.changeAt(LocalDateTime.of(2025, 1, 1, 0, 0))
 			.build();
+
 		SubscriptionHistoryJpaEntity e2 = SubscriptionHistoryJpaEntity.builder()
-			.memberId(2L)
+			.memberId(200L)
 			.subscriptionStatus(SubscriptionStatus.ACTIVE)
-			.startAt(now.minusMonths(1))
-			.endAt(now.minusHours(1))
-			.changeAt(null)
+			.period(PlanPeriod.YEARLY)
+			.startAt(LocalDateTime.of(2023, 6, 1, 0, 0))
+			.endAt(LocalDateTime.of(2024, 6, 1, 0, 0))
+			.changeAt(LocalDateTime.of(2024, 6, 1, 0, 0))
 			.build();
-		when(jpaRepo.findExpiredBefore(eq(SubscriptionStatus.ACTIVE), any(LocalDateTime.class)))
-			.thenReturn(List.of(e1, e2));
+
+		given(historyJpaRepository.findExpiredByPeriod(
+			eq(SubscriptionStatus.ACTIVE),
+			any(LocalDateTime.class),
+			eq(PlanPeriod.YEARLY)))
+			.willReturn(List.of(e1, e2));
 
 		// when
-		job.execute(mock(JobExecutionContext.class));
+		job.execute(context);
 
-		// then
-		verify(historyService).recordExpiry(eq(1L), eq(e1.getStartAt()), eq(e1.getEndAt()), any(LocalDateTime.class));
-		verify(historyService).recordExpiry(eq(2L), eq(e2.getStartAt()), eq(e2.getEndAt()), any(LocalDateTime.class));
-		verifyNoMoreInteractions(historyService);
-	}
-
-	@Test
-	void execute_whenNoExpiredSubscriptions_shouldNotCallRecordExpiry() throws Exception {
-		// given
-		when(jpaRepo.findExpiredBefore(any(), any())).thenReturn(List.of());
-
-		// when
-		job.execute(mock(JobExecutionContext.class));
-
-		// then
-		verifyNoInteractions(historyService);
+		// then: 각각 recordExpiry 호출 검증 (changeAt는 any로 처리)
+		then(historyService).should(times(1)).recordExpiry(
+			eq(100L),
+			eq(PlanPeriod.YEARLY),
+			eq(e1.getStartAt()),
+			eq(e1.getEndAt()),
+			any(LocalDateTime.class)
+		);
+		then(historyService).should(times(1)).recordExpiry(
+			eq(200L),
+			eq(PlanPeriod.YEARLY),
+			eq(e2.getStartAt()),
+			eq(e2.getEndAt()),
+			any(LocalDateTime.class)
+		);
 	}
 }
