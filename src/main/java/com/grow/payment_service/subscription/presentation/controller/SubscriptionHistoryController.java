@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.application.dto.SubscriptionHistoryResponse;
+import com.grow.payment_service.subscription.application.dto.SubscriptionHistorySummary;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,22 @@ public class SubscriptionHistoryController {
 		return ResponseEntity.ok(new RsData<>("200", "내 구독 이력 조회 성공", list));
 	}
 
-	// @Operation(summary = "구독 갱신", description = "인증된 멤버의 구독을 1개월 연장하고 이력에 저장합니다.")
+	/**
+	 * 멤버의 구독 조회
+	 */
+	@GetMapping("/summaries")
+	public ResponseEntity<RsData<List<SubscriptionHistorySummary>>> getSummaries(
+		@RequestHeader("X-Authorization-Id") Long memberId
+	) {
+		List<SubscriptionHistorySummary> summaries =
+			subscriptionHistoryApplicationService.getSubscriptionSummaries(memberId);
+
+		return ResponseEntity.ok(
+			new RsData<>("200", "구독 요약 조회 성공", summaries)
+		);
+	}
+
+	// @Operation(summary = "테스트용 구독 갱신", description = "인증된 멤버의 구독을 1개월 연장하고 이력에 저장합니다.")
 	@PostMapping("/renew")
 	public ResponseEntity<RsData<Void>> renewSubscription(
 		@RequestHeader("X-Authorization-Id") Long memberId,
