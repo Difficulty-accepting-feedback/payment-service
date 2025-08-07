@@ -113,23 +113,18 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			paymentKey, orderId, amount, idempotencyKey
 		);
 
-		// 2) 주문 조회 & 회원 검증
+		// 2) 주문 조회 & 소유권 검증
 		Payment paid = paymentRepository.findById(paymentId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_NOT_FOUND));
-		if (!paid.getMemberId().equals(memberId)) {
-			throw new PaymentApplicationException(ErrorCode.PAYMENT_ACCESS_DENIED);
-		}
+		paid.verifyOwnership(memberId);
 
 		// 3) Plan 정보 조회
 		Plan plan = planRepository.findById(paid.getPlanId())
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR));
 
-		// 4) 월간 구독형일 때만 구독 시작/갱신 기록
-		if (plan.getType() == PlanType.SUBSCRIPTION) {
-			subscriptionService.recordSubscriptionRenewal(
-				memberId,
-				plan.getPeriod()
-			);
+		// 4) “월간 구독 자동 갱신”인 경우에만 구독 시작/갱신 기록
+		if (plan.isAutoRenewal()) {
+			subscriptionService.recordSubscriptionRenewal(memberId, plan.getPeriod());
 			log.info("[구독시작/갱신] memberId={}, period={}", memberId, plan.getPeriod());
 		}
 
@@ -148,12 +143,11 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		int cancelAmount,
 		CancelReason reason
 	) {
-		// 주문 조회 & 회원 검증
+		// 1) 주문 조회
 		Payment paid = paymentRepository.findByOrderId(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
-		if (!paid.getMemberId().equals(memberId)) {
-			throw new PaymentApplicationException(ErrorCode.PAYMENT_ACCESS_DENIED);
-		}
+		// 2) 소유권 검증
+		paid.verifyOwnership(memberId);
 
 		try {
 			return paymentSaga.cancelWithCompensation(paymentKey, orderId, cancelAmount, reason);
@@ -173,12 +167,11 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		Long memberId,
 		PaymentIssueBillingKeyParam param
 	) {
-		// 주문 조회 & 회원 검증
+		// 1) 주문 조회
 		Payment paid = paymentRepository.findByOrderId(param.getOrderId())
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
-		if (!paid.getMemberId().equals(memberId)) {
-			throw new PaymentApplicationException(ErrorCode.PAYMENT_ACCESS_DENIED);
-		}
+		// 2) 소유권 검증
+		paid.verifyOwnership(memberId);
 
 		try {
 			return paymentSaga.issueKeyWithCompensation(param);
@@ -198,12 +191,12 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		PaymentAutoChargeParam param,
 		String idempotencyKey
 	) {
-		// 주문 조회 & 회원 검증
+		// 1) 주문 조회
 		Payment paid = paymentRepository.findByOrderId(param.getOrderId())
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
-		if (!paid.getMemberId().equals(memberId)) {
-			throw new PaymentApplicationException(ErrorCode.PAYMENT_ACCESS_DENIED);
-		}
+		// 2) 소유권 검증
+		paid.verifyOwnership(memberId);
+
 
 		try {
 			return paymentSaga.autoChargeWithCompensation(param, idempotencyKey);
