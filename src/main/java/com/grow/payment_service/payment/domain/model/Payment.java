@@ -208,6 +208,13 @@ public class Payment {
 		);
 	}
 
+	/** 호출한 memberId와 일치하지 않으면 예외 */
+	public void verifyOwnership(Long memberId) {
+		if (!this.memberId.equals(memberId)) {
+			throw PaymentDomainException.accessDenied(memberId);
+		}
+	}
+
 	public static Payment of(Long paymentId, Long memberId, Long planId, String orderId,
 		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, PayStatus payStatus, String method,

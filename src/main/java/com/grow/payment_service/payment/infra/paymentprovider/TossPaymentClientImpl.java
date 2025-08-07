@@ -12,8 +12,8 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import com.grow.payment_service.payment.global.exception.ErrorCode;
-import com.grow.payment_service.payment.global.exception.TossException;
+import com.grow.payment_service.global.exception.ErrorCode;
+import com.grow.payment_service.global.exception.TossException;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResponse;

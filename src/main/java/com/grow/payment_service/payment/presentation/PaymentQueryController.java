@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.grow.payment_service.payment.application.dto.PaymentDetailResponse;
 import com.grow.payment_service.payment.application.service.PaymentQueryService;
-import com.grow.payment_service.payment.global.dto.RsData;
+import com.grow.payment_service.global.dto.RsData;
 
 import lombok.RequiredArgsConstructor;
 

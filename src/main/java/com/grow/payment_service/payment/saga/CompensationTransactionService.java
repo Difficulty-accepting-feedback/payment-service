@@ -9,8 +9,8 @@ import com.grow.payment_service.payment.application.service.PaymentPersistenceSe
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
-import com.grow.payment_service.payment.global.exception.ErrorCode;
-import com.grow.payment_service.payment.global.exception.PaymentSagaException;
+import com.grow.payment_service.global.exception.ErrorCode;
+import com.grow.payment_service.global.exception.PaymentSagaException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

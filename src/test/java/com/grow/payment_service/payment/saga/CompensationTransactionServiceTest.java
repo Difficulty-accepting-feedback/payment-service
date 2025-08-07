@@ -16,8 +16,8 @@ import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
-import com.grow.payment_service.payment.global.exception.ErrorCode;
-import com.grow.payment_service.payment.global.exception.PaymentSagaException;
+import com.grow.payment_service.global.exception.ErrorCode;
+import com.grow.payment_service.global.exception.PaymentSagaException;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CompensationTransactionService 전체 테스트")

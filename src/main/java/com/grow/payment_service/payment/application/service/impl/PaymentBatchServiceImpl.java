@@ -17,9 +17,11 @@ import com.grow.payment_service.payment.domain.model.enums.FailureReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
-import com.grow.payment_service.payment.global.exception.ErrorCode;
-import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.exception.ErrorCode;
+import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,99 +35,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final PaymentHistoryRepository historyRepository;
 	private final PaymentApplicationService paymentService;
 	private final RedisIdempotencyAdapter idempotencyAdapter;
-
-	/**
-	 * 매월 자동결제 배치 실행
-	 * 이 메서드는 READY 상태 결제 건을 조회하고,
-	 * 각 건에 대해 즉시 자동결제(processSingleAutoCharge)를 호출합니다.
-	 * 1. READY 상태인 결제 건 조회
-	 * 2. idempotency 키 생성 및 중복 처리 방지
-	 * 3. READY -> IN_PROGRESS 전이 및 이력 저장
-	 * 4. 외부 과금 호출
-	 * 5. IN_PROGRESS -> APPROVED 전이 및 이력 저장
-	 * 6. APPROVED -> READY 리셋(다음 달 준비) 및 이력 저장
-	 */
-	@Override
-	public void processMonthlyAutoCharge() {
-		List<Payment> targets = paymentRepository
-			.findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_READY);
-
-		if (targets.isEmpty()) {
-			log.info("[자동결제 대상 없음] 처리할 결제 건이 없습니다.");
-			return;
-		}
-
-		String billingMonth = YearMonth.now()
-			.format(DateTimeFormatter.ofPattern("yyyy-MM"));
-
-		for (Payment p : targets) {
-			// recordKey : "autoCharge:{orderId}:{billingMonth}"
-			// 한 결제 건(orderId)과 한 청구월(billingMonth) 당
-			// 한 번만 생성되는 UUID 멱등키를 관리하기 위한 고유 식별자
-			String recordKey = "autoCharge:" + p.getOrderId() + ":" + billingMonth;
-
-			// UUID 멱등키를 한 번만 생성(getOrCreateKey) -> idempotencyKey
-			String idempotencyKey = idempotencyAdapter.getOrCreateKey(recordKey);
-
-			// 예약(reserve) 검사 -> false 면 이미 처리된 키
-			if (!idempotencyAdapter.reserve(idempotencyKey)) {
-				log.warn("[중복 자동결제 차단] idempotencyKey={}", idempotencyKey);
-				continue;
-			}
-
-			try {
-				// 상태 전이: AUTO_BILLING_READY -> IN_PROGRESS
-				Payment inProgress = p.startAutoBilling();
-				paymentRepository.save(inProgress);
-				historyRepository.save(PaymentHistory.create(
-					inProgress.getPaymentId(),
-					inProgress.getPayStatus(),
-					"자동결제 진행 중 상태로 전이"
-				));
-
-				// 자동결제 파라미터 생성
-				PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
-					.billingKey(inProgress.getBillingKey())
-					.customerKey(inProgress.getCustomerKey())
-					.amount(inProgress.getTotalAmount().intValue())
-					.orderId(inProgress.getOrderId())
-					.orderName("GROW Plan #" + inProgress.getOrderId())
-					.customerEmail("member" + inProgress.getMemberId() + "@example.com")
-					.customerName("Member " + inProgress.getMemberId())
-					.build();
-
-				PaymentConfirmResponse res =
-					paymentService.chargeWithBillingKey(param, idempotencyKey);
-				log.info("[자동결제 성공] idempotencyKey={}, 결제ID={}, 주문ID={}, 결과={}",
-					idempotencyKey, p.getPaymentId(), p.getOrderId(), res.getPayStatus());
-
-				// IN_PROGRESS → APPROVED 전이
-				Payment approved = inProgress.approveAutoBilling();
-				paymentRepository.save(approved);
-				historyRepository.save(PaymentHistory.create(
-					approved.getPaymentId(),
-					approved.getPayStatus(),
-					"자동결제 승인 처리"
-				));
-
-				// APPROVED -> READY 리셋 (다음 달 결제 준비)
-				Payment ready = approved.resetForNextCycle();
-				paymentRepository.save(ready);
-				historyRepository.save(PaymentHistory.create(
-					ready.getPaymentId(),
-					ready.getPayStatus(),
-					"다음 달 READY로 전이"
-				));
-
-			} catch (Exception ex) {
-				log.error("[자동결제 실패] idempotencyKey={}, 결제ID={}, 주문ID={}, 원인={}",
-					idempotencyKey, p.getPaymentId(), p.getOrderId(), ex.getMessage(), ex);
-				throw new PaymentApplicationException(
-					ErrorCode.BATCH_AUTO_CHARGE_ERROR, ex
-				);
-			}
-		}
-	}
+	private final SubscriptionHistoryApplicationService subscriptionService;
 
 	/**
 	 * 특정 회원의 payment 객체에서 빌링키를 제거합니다.
@@ -247,7 +157,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				.build();
 
 			PaymentConfirmResponse res =
-				paymentService.chargeWithBillingKey(param, idemKey);
+				paymentService.chargeWithBillingKey(p.getMemberId(), param, idemKey);
 			log.info("[자동결제 성공] paymentId={}, idemKey={}, 결과={}",
 				paymentId, idemKey, res.getPayStatus());
 

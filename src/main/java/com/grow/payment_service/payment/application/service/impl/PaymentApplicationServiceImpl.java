@@ -18,9 +18,13 @@ import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.global.exception.ErrorCode;
-import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.exception.ErrorCode;
+import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.saga.PaymentSagaOrchestrator;
+import com.grow.payment_service.plan.domain.model.Plan;
+import com.grow.payment_service.plan.domain.model.enums.PlanType;
+import com.grow.payment_service.plan.domain.repository.PlanRepository;
+import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,13 +35,14 @@ import lombok.extern.slf4j.Slf4j;
 public class PaymentApplicationServiceImpl implements PaymentApplicationService {
 
 	private static final String SUCCESS_URL = "http://localhost:8080/confirm"; // 임시 값
-	private static final String FAIL_URL = "http://localhost:8080/confirm?fail";  // 임시 값
-	private final PaymentGatewayPort gatewayPort;
-	private final PaymentPersistenceService persistenceService;
+	private static final String FAIL_URL    = "http://localhost:8080/confirm?fail";  // 임시 값
+
+	private final PlanRepository planRepository;
 	private final OrderIdGenerator orderIdGenerator;
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
 	private final PaymentSagaOrchestrator paymentSaga;
+	private final SubscriptionHistoryApplicationService subscriptionService;
 
 	/**
 	 * 주문 DB 생성 후 클라이언트에게 데이터 반환
@@ -56,7 +61,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				memberId, planId, orderId,
 				null, null,
 				"cust_" + memberId,
-				(long)amount,
+				(long) amount,
 				"CARD"
 			);
 			payment = paymentRepository.save(payment);
@@ -68,13 +73,22 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				)
 			);
 
+			// Plan 조회
+			Plan plan = planRepository.findById(planId)
+				.orElseThrow(() -> new PaymentApplicationException(
+					ErrorCode.PAYMENT_INIT_ERROR
+				));
+
 			// 클라이언트 응답
 			return new PaymentInitResponse(
 				orderId,
 				amount,
 				"GROW Plan #" + orderId,
 				SUCCESS_URL + "?memberId=" + memberId + "&planId=" + planId,
-				FAIL_URL + "?memberId=" + memberId + "&planId=" + planId
+				FAIL_URL    + "?memberId=" + memberId + "&planId=" + planId,
+				planId,
+				plan.getType(),
+				plan.getPeriod()
 			);
 		} catch (Exception ex) {
 			log.error("주문 생성 실패: memberId={}, planId={}, amount={}", memberId, planId, amount, ex);
@@ -87,13 +101,34 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 *  (외부 API 호출 ↔ DB 저장 분리, SAGA 위임)
 	 */
 	@Override
-	public Long confirmPayment(String paymentKey, String orderId, int amount, String idempotencyKey) {
-		try {
-			return paymentSaga.confirmWithCompensation(paymentKey, orderId, amount, idempotencyKey);
-		} catch (Exception ex) {
-			log.error("결제 승인 실패: paymentKey={}, orderId={}, amount={}", paymentKey, orderId, amount, ex);
-			throw new PaymentApplicationException(ErrorCode.PAYMENT_CONFIRM_ERROR, ex);
+	public Long confirmPayment(
+		Long memberId,
+		String paymentKey,
+		String orderId,
+		int amount,
+		String idempotencyKey
+	) {
+		// 1) 결제 승인 SAGA 실행
+		Long paymentId = paymentSaga.confirmWithCompensation(
+			paymentKey, orderId, amount, idempotencyKey
+		);
+
+		// 2) 주문 조회 & 소유권 검증
+		Payment paid = paymentRepository.findById(paymentId)
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_NOT_FOUND));
+		paid.verifyOwnership(memberId);
+
+		// 3) Plan 정보 조회
+		Plan plan = planRepository.findById(paid.getPlanId())
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR));
+
+		// 4) “월간 구독 자동 갱신”인 경우에만 구독 시작/갱신 기록
+		if (plan.isAutoRenewal()) {
+			subscriptionService.recordSubscriptionRenewal(memberId, plan.getPeriod());
+			log.info("[구독시작/갱신] memberId={}, period={}", memberId, plan.getPeriod());
 		}
+
+		return paymentId;
 	}
 
 	/**
@@ -102,11 +137,18 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 */
 	@Override
 	public PaymentCancelResponse cancelPayment(
+		Long memberId,
 		String paymentKey,
 		String orderId,
 		int cancelAmount,
 		CancelReason reason
 	) {
+		// 1) 주문 조회
+		Payment paid = paymentRepository.findByOrderId(orderId)
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
+		// 2) 소유권 검증
+		paid.verifyOwnership(memberId);
+
 		try {
 			return paymentSaga.cancelWithCompensation(paymentKey, orderId, cancelAmount, reason);
 		} catch (Exception ex) {
@@ -121,7 +163,16 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 *  (외부 API 호출 ↔ DB 저장 분리, SAGA 위임)
 	 */
 	@Override
-	public PaymentIssueBillingKeyResponse issueBillingKey(PaymentIssueBillingKeyParam param) {
+	public PaymentIssueBillingKeyResponse issueBillingKey(
+		Long memberId,
+		PaymentIssueBillingKeyParam param
+	) {
+		// 1) 주문 조회
+		Payment paid = paymentRepository.findByOrderId(param.getOrderId())
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
+		// 2) 소유권 검증
+		paid.verifyOwnership(memberId);
+
 		try {
 			return paymentSaga.issueKeyWithCompensation(param);
 		} catch (Exception ex) {
@@ -135,7 +186,18 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 *  (외부 API 호출 ↔ DB 저장 분리, SAGA 위임)
 	 */
 	@Override
-	public PaymentConfirmResponse chargeWithBillingKey(PaymentAutoChargeParam param, String idempotencyKey) {
+	public PaymentConfirmResponse chargeWithBillingKey(
+		Long memberId,
+		PaymentAutoChargeParam param,
+		String idempotencyKey
+	) {
+		// 1) 주문 조회
+		Payment paid = paymentRepository.findByOrderId(param.getOrderId())
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
+		// 2) 소유권 검증
+		paid.verifyOwnership(memberId);
+
+
 		try {
 			return paymentSaga.autoChargeWithCompensation(param, idempotencyKey);
 		} catch (Exception ex) {

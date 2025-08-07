@@ -9,9 +9,9 @@ import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyRe
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.payment.global.exception.PaymentSagaException;
+import com.grow.payment_service.global.exception.PaymentSagaException;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
-import com.grow.payment_service.payment.global.exception.ErrorCode;
+import com.grow.payment_service.global.exception.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

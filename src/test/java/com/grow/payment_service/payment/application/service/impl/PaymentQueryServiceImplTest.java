@@ -9,7 +9,7 @@ import java.util.Optional;
 
 import com.grow.payment_service.payment.application.dto.PaymentDetailResponse;
 import com.grow.payment_service.payment.application.dto.PaymentHistoryResponse;
-import com.grow.payment_service.payment.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;

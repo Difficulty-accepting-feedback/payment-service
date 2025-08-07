@@ -1,0 +1,71 @@
+package com.grow.payment_service.plan.domain.model;
+
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
+import com.grow.payment_service.plan.domain.model.enums.PlanType;
+
+import lombok.Builder;
+import lombok.Getter;
+
+/**
+ * 플랜(구독) 도메인 모델
+ */
+@Getter
+public class Plan {
+
+	private final Long planId;
+	private final PlanType type;
+	private final Long amount;
+	private final PlanPeriod period;
+	private final String benefits;
+
+	@Builder
+	private Plan(Long planId,
+		PlanType type,
+		Long amount,
+		PlanPeriod period,
+		String benefits) {
+		this.planId    = planId;
+		this.type      = type;
+		this.amount    = amount;
+		this.period    = period;
+		this.benefits  = benefits;
+	}
+
+	/**
+	 * 신규 구독 생성
+	 */
+	public static Plan create(PlanType type,
+		Long amount,
+		PlanPeriod period,
+		String benefits) {
+		return Plan.builder()
+			.planId(null)
+			.type(type)
+			.amount(amount)
+			.period(period)
+			.benefits(benefits)
+			.build();
+	}
+
+	/**
+	 * 이 플랜이  월간 자동 갱신 구독인지 여부
+	 */
+	public boolean isAutoRenewal() {
+		return this.type == PlanType.SUBSCRIPTION
+			&& this.period == PlanPeriod.MONTHLY;
+	}
+
+	public static Plan of(Long planId,
+		PlanType type,
+		Long amount,
+		PlanPeriod period,
+		String benefits) {
+		return Plan.builder()
+			.planId(planId)
+			.type(type)
+			.amount(amount)
+			.period(period)
+			.benefits(benefits)
+			.build();
+	}
+}

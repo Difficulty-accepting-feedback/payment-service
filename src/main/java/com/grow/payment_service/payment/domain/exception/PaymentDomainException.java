@@ -24,4 +24,9 @@ public class PaymentDomainException extends RuntimeException {
 			String.format("금액이 충분하지 않습니다. 필요=%d, 현재=%d", required, actual)
 		);
 	}
+	public static PaymentDomainException accessDenied(Long memberId) {
+		return new PaymentDomainException(
+			String.format("접근 권한이 없습니다. memberId=%d", memberId)
+		);
+	}
 }
