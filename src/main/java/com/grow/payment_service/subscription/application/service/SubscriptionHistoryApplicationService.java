@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.SubscriptionHistoryException;
-import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;                         // ← import
+import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.application.dto.SubscriptionHistoryResponse;
 import com.grow.payment_service.subscription.application.dto.SubscriptionHistorySummary;
 import com.grow.payment_service.subscription.domain.model.SubscriptionHistory;
