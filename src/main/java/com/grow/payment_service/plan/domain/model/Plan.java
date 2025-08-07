@@ -47,6 +47,14 @@ public class Plan {
 			.build();
 	}
 
+	/**
+	 * 이 플랜이  월간 자동 갱신 구독인지 여부
+	 */
+	public boolean isAutoRenewal() {
+		return this.type == PlanType.SUBSCRIPTION
+			&& this.period == PlanPeriod.MONTHLY;
+	}
+
 	public static Plan of(Long planId,
 		PlanType type,
 		Long amount,
