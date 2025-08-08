@@ -10,7 +10,7 @@ import com.grow.payment_service.payment.infra.paymentprovider.dto.TossCancelResp
  */
 public interface PaymentGatewayPort {
 	/** 결제 승인(토스) */
-	void confirmPayment(String paymentKey, String orderId, int amount);
+	void confirmPayment(String paymentKey, String orderId, int amount,  String customerEmail, String customerName);
 
 	/** 결제 취소(토스) */
 	TossCancelResponse cancelPayment(String paymentKey, String reason, int amount, String message);

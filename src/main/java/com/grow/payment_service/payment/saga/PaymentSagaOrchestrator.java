@@ -37,7 +37,9 @@ public class PaymentSagaOrchestrator {
 		String paymentKey,
 		String orderId,
 		int amount,
-		String idempotencyKey
+		String idempotencyKey,
+		String customerEmail,
+		String customerName
 	) {
 		// 멱등 키 생성 또는 이전 결과 조회
 		if (!idempotencyAdapter.reserve(idempotencyKey)) {
@@ -53,7 +55,7 @@ public class PaymentSagaOrchestrator {
 
 		try {
 			// 토스 결제 승인 API 호출
-			gatewayPort.confirmPayment(paymentKey, orderId, amount);
+			gatewayPort.confirmPayment(paymentKey, orderId, amount, customerEmail, customerName);
 			// DB 저장(리트라이+보상)
 			Long paymentId = retryableService.saveConfirmation(paymentKey, orderId, amount);
 			// 멱등 키 완료 처리

@@ -3,6 +3,7 @@ package com.grow.payment_service.payment.application.service.impl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
@@ -20,6 +21,8 @@ import com.grow.payment_service.payment.domain.repository.PaymentHistoryReposito
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.payment.infra.client.MemberClient;
+import com.grow.payment_service.payment.infra.client.MemberInfoResponse;
 import com.grow.payment_service.payment.saga.PaymentSagaOrchestrator;
 import com.grow.payment_service.plan.domain.model.Plan;
 import com.grow.payment_service.plan.domain.model.enums.PlanType;
@@ -43,6 +46,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	private final PaymentHistoryRepository historyRepository;
 	private final PaymentSagaOrchestrator paymentSaga;
 	private final SubscriptionHistoryApplicationService subscriptionService;
+	private final MemberClient memberClient;
+
 
 	/**
 	 * 주문 DB 생성 후 클라이언트에게 데이터 반환
@@ -108,24 +113,50 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		int amount,
 		String idempotencyKey
 	) {
-		// 1) 결제 승인 SAGA 실행
-		Long paymentId = paymentSaga.confirmWithCompensation(
-			paymentKey, orderId, amount, idempotencyKey
-		);
+		// 0) 요청 진입 로그
+		log.info("[결제 승인 요청 시작] memberId={}, orderId={}, amount={}, paymentKey={}",
+			memberId, orderId, amount, paymentKey);
 
-		// 2) 주문 조회 & 소유권 검증
+		// 1) 멤버 서비스 호출 -> 이메일·이름 조회
+		log.info("[1/4] 멤버 서비스 호출 중... memberId={}", memberId);
+		RsData<MemberInfoResponse> rs = memberClient.getMyInfo(memberId);
+		MemberInfoResponse profile = rs.getData();
+		String customerEmail = profile.getEmail();
+		String customerName  = profile.getNickname();
+		log.info("[1/4] 멤버 정보 조회 완료 → email={}, nickname={}",
+			customerEmail, customerName);
+
+		// 2) 결제 승인 SAGA 호출 (이메일·이름 파라미터 추가)
+		log.info("[2/4] SAGA 결제 승인 호출 → paymentKey={}, orderId={}, amount={}, idemKey={}, email={}, name={}",
+			paymentKey, orderId, amount, idempotencyKey, customerEmail, customerName);
+		Long paymentId = paymentSaga.confirmWithCompensation(
+			paymentKey,
+			orderId,
+			amount,
+			idempotencyKey,
+			customerEmail,
+			customerName
+		);
+		log.info("[2/4] SAGA 결제 승인 완료 → paymentId={}", paymentId);
+
+		// 3) 주문 조회 & 소유권 검증
+		log.info("[3/4] 주문 조회 및 소유권 검증 → paymentId={}", paymentId);
 		Payment paid = paymentRepository.findById(paymentId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_NOT_FOUND));
 		paid.verifyOwnership(memberId);
+		log.info("[3/4] 소유권 검증 완료 → memberId={} owns paymentId={}",
+			memberId, paymentId);
 
-		// 3) Plan 정보 조회
+		// 4) 구독 플랜인 경우 갱신 기록
+		log.info("[4/4] 플랜 조회 → planId={}", paid.getPlanId());
 		Plan plan = planRepository.findById(paid.getPlanId())
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR));
-
-		// 4) “월간 구독 자동 갱신”인 경우에만 구독 시작/갱신 기록
 		if (plan.isAutoRenewal()) {
 			subscriptionService.recordSubscriptionRenewal(memberId, plan.getPeriod());
-			log.info("[구독시작/갱신] memberId={}, period={}", memberId, plan.getPeriod());
+			log.info("[4/4] 구독 갱신 기록 완료 → memberId={}, period={}",
+				memberId, plan.getPeriod());
+		} else {
+			log.info("[4/4] 자동 갱신 대상 아님 (One-time purchase)");
 		}
 
 		return paymentId;
