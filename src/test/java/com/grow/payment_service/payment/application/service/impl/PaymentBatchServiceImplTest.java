@@ -1,6 +1,7 @@
 package com.grow.payment_service.payment.application.service.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
 
 import java.time.YearMonth;
@@ -9,35 +10,38 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
-import com.grow.payment_service.payment.application.service.PaymentApplicationService;
-import com.grow.payment_service.payment.domain.repository.PaymentRepository;
-import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
-import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
-import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
+import com.grow.payment_service.payment.infra.client.MemberClient;
+import com.grow.payment_service.payment.infra.client.MemberInfoResponse;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
+import com.grow.payment_service.payment.domain.repository.PaymentRepository;
+import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
+import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentBatchServiceImplTest {
 
 	@Mock private PaymentRepository paymentRepository;
 	@Mock private PaymentHistoryRepository historyRepository;
-	@Mock private PaymentApplicationService paymentService;
+	@Mock private com.grow.payment_service.payment.application.service.PaymentApplicationService paymentService;
 	@Mock private RedisIdempotencyAdapter idempotencyAdapter;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
+	@Mock private MemberClient memberClient;
 
 	@InjectMocks
 	private PaymentBatchServiceImpl batchService;
@@ -68,7 +72,7 @@ class PaymentBatchServiceImplTest {
 
 		then(paymentRepository).should().save(argThat(updated ->
 			updated.getBillingKey() == null &&
-			updated.getPayStatus() == PayStatus.ABORTED
+				updated.getPayStatus() == PayStatus.ABORTED
 		));
 		then(historyRepository).should()
 			.save(any(PaymentHistory.class));
@@ -102,7 +106,7 @@ class PaymentBatchServiceImplTest {
 
 		then(paymentRepository).should().save(argThat(cleared ->
 			cleared.getBillingKey() == null &&
-			cleared.getPayStatus() == PayStatus.ABORTED
+				cleared.getPayStatus() == PayStatus.ABORTED
 		));
 		then(historyRepository).should()
 			.save(any(PaymentHistory.class));
@@ -130,6 +134,7 @@ class PaymentBatchServiceImplTest {
 	@Test
 	@DisplayName("processSingleAutoCharge: 성공 흐름")
 	void processSingleAutoCharge_success() {
+		// 준비: payment 레코드
 		Payment p = Payment.of(
 			5L, 50L, 500L, "ord-5", null,
 			"bKey", "cust_50", 2500L,
@@ -140,15 +145,40 @@ class PaymentBatchServiceImplTest {
 		given(idempotencyAdapter.getOrCreateKey(anyString())).willReturn("idem");
 		given(idempotencyAdapter.reserve("idem")).willReturn(true);
 
-		PaymentConfirmResponse confirmRes = new PaymentConfirmResponse(5L, PayStatus.AUTO_BILLING_APPROVED.name());
-		given(paymentService.chargeWithBillingKey(eq(50L), any(PaymentAutoChargeParam.class), eq("idem")))
-			.willReturn(confirmRes);
+		// 준비: memberClient stub —> RsData 로 감싸서 반환
+		MemberInfoResponse memberDto = new MemberInfoResponse(50L, "foo@ex.com", "FooNick");
+		given(memberClient.getMyInfo(50L))
+			.willReturn(new RsData<>("200", "OK", memberDto));
 
+		// 준비: paymentService stub
+		PaymentConfirmResponse confirmRes = new PaymentConfirmResponse(
+			5L,
+			PayStatus.AUTO_BILLING_APPROVED.name(),
+			"foo@ex.com",
+			"FooNick"
+		);
+		given(paymentService.chargeWithBillingKey(
+			eq(50L),
+			any(PaymentAutoChargeParam.class),
+			eq("idem")
+		)).willReturn(confirmRes);
+
+		// 실행
 		batchService.processSingleAutoCharge(5L);
 
+		// 검증: state transitions 저장
 		then(paymentRepository).should(times(3)).save(any(Payment.class));
 		then(historyRepository).should(times(3)).save(any(PaymentHistory.class));
-		then(paymentService).should().chargeWithBillingKey(eq(50L), any(PaymentAutoChargeParam.class), eq("idem"));
+
+		// 검증: 실제 호출된 param 에 이메일·이름 반영
+		ArgumentCaptor<PaymentAutoChargeParam> captor =
+			ArgumentCaptor.forClass(PaymentAutoChargeParam.class);
+		then(paymentService)
+			.should()
+			.chargeWithBillingKey(eq(50L), captor.capture(), eq("idem"));
+		PaymentAutoChargeParam used = captor.getValue();
+		assertEquals("foo@ex.com", used.getCustomerEmail());
+		assertEquals("FooNick",    used.getCustomerName());
 	}
 
 	@Test

@@ -85,7 +85,9 @@ public class PaymentSagaOrchestrator {
 				var existing = persistenceService.findByOrderId(param.getOrderId());
 				return new PaymentConfirmResponse(
 					Long.valueOf(prev),
-					existing.getPayStatus().name()
+					existing.getPayStatus().name(),
+					param.getCustomerEmail(),
+					param.getCustomerName()
 				);
 			}
 			// 아직 처리 중이면 중복 요청 예외 발생

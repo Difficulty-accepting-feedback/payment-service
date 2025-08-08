@@ -155,7 +155,9 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		paymentRepository.save(payment);
 		return new PaymentConfirmResponse(
 			payment.getPaymentId(),
-			payment.getPayStatus().name()
+			payment.getPayStatus().name(),
+			null,
+			null
 		);
 	}
 

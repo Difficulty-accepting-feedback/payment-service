@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.grow.payment_service.global.exception.PaymentSagaException;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
@@ -20,11 +21,10 @@ import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
-import com.grow.payment_service.global.exception.ErrorCode;
-import com.grow.payment_service.global.exception.PaymentSagaException;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
+import com.grow.payment_service.global.exception.ErrorCode;
 
 @SpringBootTest(classes = PaymentSagaOrchestrator.class)
 class PaymentSagaOrchestratorTest {
@@ -164,28 +164,43 @@ class PaymentSagaOrchestratorTest {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(true);
 
 		var param = PaymentAutoChargeParam.builder()
-			.billingKey("bkey").customerKey("ckey")
-			.amount(500).orderId("oid")
-			.orderName("order").customerEmail("e@mail")
-			.customerName("name").taxFreeAmount(0).taxExemptionAmount(0)
+			.billingKey("bkey")
+			.customerKey("ckey")
+			.amount(500)
+			.orderId("oid")
+			.orderName("order")
+			.customerEmail("e@mail")
+			.customerName("name")
+			.taxFreeAmount(0)          // tax 필드 포함
+			.taxExemptionAmount(0)     // tax 필드 포함
 			.build();
 
-		var tossCharge = mock(TossBillingChargeResponse.class);
+		TossBillingChargeResponse tossCharge = mock(TossBillingChargeResponse.class);
+		// 9-arg 호출로 stub 설정
 		given(gatewayPort.chargeWithBillingKey(
-			eq("bkey"), eq("ckey"), eq(500), eq("oid"),
-			eq("order"), eq("e@mail"), eq("name"), eq(0), eq(0)
+			eq("bkey"), eq("ckey"), eq(500),
+			eq("oid"), eq("order"),
+			eq("e@mail"), eq("name"),
+			eq(0), eq(0)
 		)).willReturn(tossCharge);
+
 		given(retryableService.saveAutoCharge("bkey", "oid", 500, tossCharge))
-			.willReturn(new PaymentConfirmResponse(99L, "DONE"));
+			.willReturn(new PaymentConfirmResponse(99L, "DONE", "e@mail", "name"));
 
 		PaymentConfirmResponse res = saga.autoChargeWithCompensation(param, "idem-key");
 
 		assertThat(res.getPayStatus()).isEqualTo("DONE");
+		assertThat(res.getCustomerEmail()).isEqualTo("e@mail");
+		assertThat(res.getCustomerName()).isEqualTo("name");
+
 		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
 		o.verify(idempotencyAdapter).reserve("idem-key");
+		// 9-arg verify
 		o.verify(gatewayPort).chargeWithBillingKey(
-			eq("bkey"), eq("ckey"), eq(500), eq("oid"),
-			eq("order"), eq("e@mail"), eq("name"), eq(0), eq(0)
+			eq("bkey"), eq("ckey"), eq(500),
+			eq("oid"), eq("order"),
+			eq("e@mail"), eq("name"),
+			eq(0), eq(0)
 		);
 		o.verify(retryableService).saveAutoCharge("bkey", "oid", 500, tossCharge);
 		o.verify(idempotencyAdapter).finish("idem-key", "99");
@@ -203,12 +218,20 @@ class PaymentSagaOrchestratorTest {
 		given(persistenceService.findByOrderId("oid")).willReturn(existing);
 
 		var param = PaymentAutoChargeParam.builder()
-			.billingKey("bkey").orderId("oid")
+			.billingKey("bkey")
+			.customerKey("ckey")
+			.amount(0)
+			.orderId("oid")
+			.orderName("order")
+			.customerEmail("e@mail")
+			.customerName("name")
 			.build();
 
 		PaymentConfirmResponse res = saga.autoChargeWithCompensation(param, "idem-key");
 		assertThat(res.getPaymentId()).isEqualTo(55L);
 		assertThat(res.getPayStatus()).isEqualTo("AUTO_BILLING_IN_PROGRESS");
+		assertThat(res.getCustomerEmail()).isEqualTo("e@mail");
+		assertThat(res.getCustomerName()).isEqualTo("name");
 
 		verify(idempotencyAdapter).reserve("idem-key");
 		verify(idempotencyAdapter).getResult("idem-key");

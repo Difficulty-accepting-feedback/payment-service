@@ -259,7 +259,7 @@ class PaymentApplicationServiceImplTest {
 			.customerEmail("email")
 			.customerName("name")
 			.build();
-		PaymentConfirmResponse dummy = new PaymentConfirmResponse(555L, "APPROVED");
+		PaymentConfirmResponse dummy = new PaymentConfirmResponse(555L, "APPROVED", "email", "name");
 		given(paymentSaga.autoChargeWithCompensation(param, "idem")).willReturn(dummy);
 
 		PaymentConfirmResponse res = service.chargeWithBillingKey(MEMBER_ID, param, "idem");

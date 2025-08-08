@@ -7,6 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
@@ -19,8 +20,9 @@ import com.grow.payment_service.payment.domain.repository.PaymentHistoryReposito
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.payment.infra.client.MemberClient;
+import com.grow.payment_service.payment.infra.client.MemberInfoResponse;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
-import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final PaymentApplicationService paymentService;
 	private final RedisIdempotencyAdapter idempotencyAdapter;
 	private final SubscriptionHistoryApplicationService subscriptionService;
+	private final MemberClient memberClient;
 
 	/**
 	 * 특정 회원의 payment 객체에서 빌링키를 제거합니다.
@@ -145,6 +148,12 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				"자동결제 진행 중 상태로 전이"
 			));
 
+			// 회원 서비스 호출 -> 이메일, 닉네임 조회
+			RsData<MemberInfoResponse> memberResp = memberClient.getMyInfo(p.getMemberId());
+			MemberInfoResponse profile = memberResp.getData();
+			String customerEmail = profile.getEmail();
+			String customerName  = profile.getNickname();
+
 			// 2) 외부 과금 호출
 			PaymentAutoChargeParam param = PaymentAutoChargeParam.builder()
 				.billingKey(inProgress.getBillingKey())
@@ -152,8 +161,8 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				.amount(inProgress.getTotalAmount().intValue())
 				.orderId(inProgress.getOrderId())
 				.orderName("GROW Plan #" + inProgress.getOrderId())
-				.customerEmail("member" + inProgress.getMemberId() + "@example.com")
-				.customerName("Member " + inProgress.getMemberId())
+				.customerEmail(customerEmail)
+				.customerName(customerName)
 				.build();
 
 			PaymentConfirmResponse res =
