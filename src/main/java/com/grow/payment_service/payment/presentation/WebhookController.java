@@ -23,23 +23,32 @@ public class WebhookController {
 
 	@PostMapping
 	public ResponseEntity<Void> handle(@RequestBody WebhookRequest event) {
-		log.info("[웹훅 수신] 이벤트 타입='{}', 데이터='{}'",
-			event.getEventType(), event.getData());
+		String type   = event.getEventType();
+		String status = event.getData().getStatus();
+		String orderId= event.getData().getOrderId();
 
-		String type = event.getEventType();
+		log.info("[웹훅 수신] 이벤트 타입='{}', orderId='{}', status='{}'",
+			type, orderId, status);
+
 		if ("PAYMENT_STATUS_CHANGED".equals(type)) {
-			log.info("[웹훅 처리] 결제 상태 변경 이벤트 → orderId={}", event.getData().getOrderId());
-			webhookService.onPaymentStatusChanged(event.getData());
-		}
-		else if ("CANCEL_STATUS_CHANGED".equals(type)) {
-			log.info("[웹훅 처리] 취소 상태 변경 이벤트 → orderId={}", event.getData().getOrderId());
-			webhookService.onCancelStatusChanged(event.getData());
+			log.info("[웹훅 처리] 결제 상태 변경 → orderId={}, status={}", orderId, status);
+
+			// 1) 결제 승인/실패
+			if ("DONE".equals(status) || "FAILED".equals(status)) {
+				webhookService.onPaymentStatusChanged(event.getData());
+			}
+			// 2) 결제 취소
+			else if ("CANCELED".equals(status)) {
+				webhookService.onCancelStatusChanged(event.getData());
+			}
+			else {
+				log.warn("[웹훅 무시] 처리 대상이 아닌 status='{}'", status);
+			}
 		}
 		else {
 			log.warn("[웹훅 무시] 지원하지 않는 이벤트 타입='{}'", type);
 		}
 
-		// 반드시 200 OK 리턴
-		return ResponseEntity.status(HttpStatus.OK).build();
+		return ResponseEntity.ok().build();
 	}
 }
