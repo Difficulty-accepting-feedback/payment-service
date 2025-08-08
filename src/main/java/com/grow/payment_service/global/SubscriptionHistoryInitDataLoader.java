@@ -49,9 +49,9 @@ public class SubscriptionHistoryInitDataLoader implements ApplicationRunner {
 	private void initPlans() {
 		List<PlanJpaEntity> plans = List.of(
 			PlanJpaEntity.builder()
-				.type(PlanType.SUBSCRIPTION)
+				.type(PlanType.ONE_TIME_PAYMENT)
 				.amount(10000L)
-				.period(PlanPeriod.MONTHLY)
+				.period(PlanPeriod.YEARLY)
 				.benefits("기본 플랜 혜택: 월간 리포트 제공")
 				.build(),
 			PlanJpaEntity.builder()
