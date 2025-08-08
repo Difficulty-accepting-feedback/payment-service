@@ -110,6 +110,9 @@ dependencies {
 	// feign client
 	implementation platform("org.springframework.cloud:spring-cloud-dependencies:2025.0.0")
 	implementation "org.springframework.cloud:spring-cloud-starter-openfeign"
+
+	// Mail
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 }
 
 tasks.named('test') {
