@@ -7,6 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
@@ -148,7 +149,8 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 			));
 
 			// 회원 서비스 호출 -> 이메일, 닉네임 조회
-			MemberInfoResponse profile = memberClient.getMyInfo(p.getMemberId());
+			RsData<MemberInfoResponse> memberResp = memberClient.getMyInfo(p.getMemberId());
+			MemberInfoResponse profile = memberResp.getData();
 			String customerEmail = profile.getEmail();
 			String customerName  = profile.getNickname();
 

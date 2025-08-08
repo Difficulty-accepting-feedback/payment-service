@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
@@ -144,9 +145,10 @@ class PaymentBatchServiceImplTest {
 		given(idempotencyAdapter.getOrCreateKey(anyString())).willReturn("idem");
 		given(idempotencyAdapter.reserve("idem")).willReturn(true);
 
-		// 준비: memberClient stub
+		// 준비: memberClient stub —> RsData 로 감싸서 반환
+		MemberInfoResponse memberDto = new MemberInfoResponse(50L, "foo@ex.com", "FooNick");
 		given(memberClient.getMyInfo(50L))
-			.willReturn(new MemberInfoResponse(50L, "foo@ex.com", "FooNick"));
+			.willReturn(new RsData<>("200", "OK", memberDto));
 
 		// 준비: paymentService stub
 		PaymentConfirmResponse confirmRes = new PaymentConfirmResponse(
