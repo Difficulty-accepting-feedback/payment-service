@@ -11,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.grow.payment_service.global.exception.PaymentSagaException;
+import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
@@ -24,7 +25,6 @@ import com.grow.payment_service.payment.domain.service.PaymentGatewayPort;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingAuthResponse;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
-import com.grow.payment_service.global.exception.ErrorCode;
 
 @SpringBootTest(classes = PaymentSagaOrchestrator.class)
 class PaymentSagaOrchestratorTest {
@@ -48,15 +48,18 @@ class PaymentSagaOrchestratorTest {
 	@DisplayName("confirmWithCompensation: 성공 시 reserve → gateway → retryable → finish 호출")
 	void confirmWithCompensation_success() {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(true);
-		willDoNothing().given(gatewayPort).confirmPayment("key", "order1", 1000);
+		willDoNothing().given(gatewayPort)
+			.confirmPayment("key", "order1", 1000, "e@mail", "name");
 		given(retryableService.saveConfirmation("key", "order1", 1000)).willReturn(42L);
 
-		Long result = saga.confirmWithCompensation("key", "order1", 1000, "idem-key");
+		Long result = saga.confirmWithCompensation(
+			"key", "order1", 1000, "idem-key", "e@mail", "name"
+		);
 
 		assertThat(result).isEqualTo(42L);
-		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
+		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService, idempotencyAdapter);
 		o.verify(idempotencyAdapter).reserve("idem-key");
-		o.verify(gatewayPort).confirmPayment("key", "order1", 1000);
+		o.verify(gatewayPort).confirmPayment("key", "order1", 1000, "e@mail", "name");
 		o.verify(retryableService).saveConfirmation("key", "order1", 1000);
 		o.verify(idempotencyAdapter).finish("idem-key", "42");
 		verify(idempotencyAdapter, never()).invalidate(anyString());
@@ -68,7 +71,9 @@ class PaymentSagaOrchestratorTest {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(false);
 		given(idempotencyAdapter.getResult("idem-key")).willReturn("77");
 
-		Long result = saga.confirmWithCompensation("key", "order1", 1000, "idem-key");
+		Long result = saga.confirmWithCompensation(
+			"key", "order1", 1000, "idem-key", "e@mail", "name"
+		);
 
 		assertThat(result).isEqualTo(77L);
 		verify(idempotencyAdapter).reserve("idem-key");
@@ -83,8 +88,9 @@ class PaymentSagaOrchestratorTest {
 		given(idempotencyAdapter.getResult("idem-key")).willReturn(null);
 
 		assertThatThrownBy(() ->
-			saga.confirmWithCompensation("key", "order1", 1000, "idem-key")
-		).isInstanceOf(PaymentSagaException.class)
+			saga.confirmWithCompensation("key", "order1", 1000, "idem-key", "e@mail", "name")
+		)
+			.isInstanceOf(PaymentSagaException.class)
 			.extracting("errorCode")
 			.isEqualTo(ErrorCode.IDEMPOTENCY_IN_FLIGHT);
 
@@ -97,18 +103,20 @@ class PaymentSagaOrchestratorTest {
 	@DisplayName("confirmWithCompensation: 저장 실패 시 invalidate 후 예외 전파")
 	void confirmWithCompensation_failure_propagates() {
 		given(idempotencyAdapter.reserve("idem-key")).willReturn(true);
-		willDoNothing().given(gatewayPort).confirmPayment("key", "order1", 1000);
+		willDoNothing().given(gatewayPort)
+			.confirmPayment("key", "order1", 1000, "e@mail", "name");
 		given(retryableService.saveConfirmation("key", "order1", 1000))
 			.willThrow(new IllegalStateException("보상 실패"));
 
 		assertThatThrownBy(() ->
-			saga.confirmWithCompensation("key", "order1", 1000, "idem-key")
-		).isInstanceOf(IllegalStateException.class)
+			saga.confirmWithCompensation("key", "order1", 1000, "idem-key", "e@mail", "name")
+		)
+			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("보상 실패");
 
-		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
+		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService, idempotencyAdapter);
 		o.verify(idempotencyAdapter).reserve("idem-key");
-		o.verify(gatewayPort).confirmPayment("key", "order1", 1000);
+		o.verify(gatewayPort).confirmPayment("key", "order1", 1000, "e@mail", "name");
 		o.verify(retryableService).saveConfirmation("key", "order1", 1000);
 		o.verify(idempotencyAdapter).invalidate("idem-key");
 		verify(idempotencyAdapter, never()).finish(anyString(), anyString());
@@ -117,22 +125,42 @@ class PaymentSagaOrchestratorTest {
 	@Test
 	@DisplayName("cancelWithCompensation: 정상 플로우")
 	void cancelWithCompensation_success() {
-		given(retryableService.saveCancelRequest("key", "order1", 200, CancelReason.USER_REQUEST))
-			.willReturn(new PaymentCancelResponse(1L, "CANCEL_REQUESTED"));
-		given(gatewayPort.cancelPayment("key", CancelReason.USER_REQUEST.name(), 200, "사용자 요청 취소"))
-			.willReturn(null);
+		// 1) 취소 요청 저장
+		given(retryableService.saveCancelRequest(
+			"key", "order1", 200, CancelReason.USER_REQUEST
+		)).willReturn(new PaymentCancelResponse(1L, "CANCEL_REQUESTED"));
+
+		// 2) gatewayPort.cancelPayment 은 TossCancelResponse 반환 → null 을 리턴하도록 stub
+		given(gatewayPort.cancelPayment(
+			"key",
+			CancelReason.USER_REQUEST.name(),
+			200,
+			"사용자 요청 취소"
+		)).willReturn(null);
+
+		// 3) 취소 완료 저장
 		given(retryableService.saveCancelComplete("order1"))
 			.willReturn(new PaymentCancelResponse(3L, "CANCELLED"));
 
+		// when
 		PaymentCancelResponse res = saga.cancelWithCompensation(
 			"key", "order1", 200, CancelReason.USER_REQUEST
 		);
 
+		// then
 		assertThat(res.getPaymentId()).isEqualTo(3L);
-		InOrder o = inOrder(retryableService, gatewayPort);
-		o.verify(retryableService).saveCancelRequest("key", "order1", 200, CancelReason.USER_REQUEST);
-		o.verify(gatewayPort).cancelPayment("key", CancelReason.USER_REQUEST.name(), 200, "사용자 요청 취소");
-		o.verify(retryableService).saveCancelComplete("order1");
+
+		InOrder order = inOrder(retryableService, gatewayPort);
+		order.verify(retryableService).saveCancelRequest(
+			"key", "order1", 200, CancelReason.USER_REQUEST
+		);
+		order.verify(gatewayPort).cancelPayment(
+			"key",
+			CancelReason.USER_REQUEST.name(),
+			200,
+			"사용자 요청 취소"
+		);
+		order.verify(retryableService).saveCancelComplete("order1");
 	}
 
 	@Test
@@ -171,12 +199,11 @@ class PaymentSagaOrchestratorTest {
 			.orderName("order")
 			.customerEmail("e@mail")
 			.customerName("name")
-			.taxFreeAmount(0)          // tax 필드 포함
-			.taxExemptionAmount(0)     // tax 필드 포함
+			.taxFreeAmount(0)
+			.taxExemptionAmount(0)
 			.build();
 
 		TossBillingChargeResponse tossCharge = mock(TossBillingChargeResponse.class);
-		// 9-arg 호출로 stub 설정
 		given(gatewayPort.chargeWithBillingKey(
 			eq("bkey"), eq("ckey"), eq(500),
 			eq("oid"), eq("order"),
@@ -195,7 +222,6 @@ class PaymentSagaOrchestratorTest {
 
 		InOrder o = inOrder(idempotencyAdapter, gatewayPort, retryableService);
 		o.verify(idempotencyAdapter).reserve("idem-key");
-		// 9-arg verify
 		o.verify(gatewayPort).chargeWithBillingKey(
 			eq("bkey"), eq("ckey"), eq(500),
 			eq("oid"), eq("order"),

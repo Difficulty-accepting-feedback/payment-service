@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
@@ -30,6 +31,8 @@ import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
+import com.grow.payment_service.payment.infra.client.MemberClient;
+import com.grow.payment_service.payment.infra.client.MemberInfoResponse;
 import com.grow.payment_service.payment.saga.PaymentSagaOrchestrator;
 import com.grow.payment_service.plan.domain.model.Plan;
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
@@ -47,6 +50,7 @@ class PaymentApplicationServiceImplTest {
 	@Mock private PaymentHistoryRepository historyRepository;
 	@Mock private PaymentSagaOrchestrator paymentSaga;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
+	@Mock private MemberClient memberClient;
 
 	@InjectMocks
 	private PaymentApplicationServiceImpl service;
@@ -57,7 +61,7 @@ class PaymentApplicationServiceImplTest {
 
 	@BeforeEach
 	void setup() {
-		// common default: monthly subscription plan
+		// 공통: 월간 구독 플랜 리턴
 		given(planRepository.findById(PLAN_ID))
 			.willReturn(Optional.of(Plan.of(
 				PLAN_ID,
@@ -109,21 +113,33 @@ class PaymentApplicationServiceImplTest {
 	@Test
 	@DisplayName("confirmPayment: 정상 흐름 & 구독 갱신")
 	void confirmPayment_success() {
-		given(paymentSaga.confirmWithCompensation("pKey", ORDER_ID, 1234, "idem"))
-			.willReturn(100L);
+		// 1) 멤버 정보 stub
+		MemberInfoResponse profile = new MemberInfoResponse(1L, "test@example.com", "TestUser");
+		given(memberClient.getMyInfo(MEMBER_ID))
+			.willReturn(new RsData<>("200", "OK", profile));
 
+		// 2) SAGA 호출 stub (email, name 포함)
+		given(paymentSaga.confirmWithCompensation(
+			"pKey", ORDER_ID, 1234, "idem", "test@example.com", "TestUser"
+		)).willReturn(100L);
+
+		// 3) DB 조회 stub
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
 			null, null, "cust_" + MEMBER_ID, 1234L, "CARD"
 		);
 		given(paymentRepository.findById(100L)).willReturn(Optional.of(paid));
 
+		// when
 		Long result = service.confirmPayment(
 			MEMBER_ID, "pKey", ORDER_ID, 1234, "idem"
 		);
 
+		// then
 		assertEquals(100L, result);
-		then(paymentSaga).should().confirmWithCompensation("pKey", ORDER_ID, 1234, "idem");
+		then(paymentSaga).should().confirmWithCompensation(
+			"pKey", ORDER_ID, 1234, "idem", "test@example.com", "TestUser"
+		);
 		then(paymentRepository).should().findById(100L);
 		then(subscriptionService).should().recordSubscriptionRenewal(MEMBER_ID, PlanPeriod.MONTHLY);
 	}
@@ -131,11 +147,19 @@ class PaymentApplicationServiceImplTest {
 	@Test
 	@DisplayName("confirmPayment: 멤버 불일치 시 도메인 예외 발생")
 	void confirmPayment_memberMismatch() {
-		given(paymentSaga.confirmWithCompensation(any(), any(), anyInt(), any()))
-			.willReturn(200L);
+		// stub member info
+		MemberInfoResponse profile = new MemberInfoResponse(1L,"email", "name");
+		given(memberClient.getMyInfo(MEMBER_ID))
+			.willReturn(new RsData<>("200","OK", profile));
 
+		// stub SAGA
+		given(paymentSaga.confirmWithCompensation(
+			anyString(), anyString(), anyInt(), anyString(), anyString(), anyString()
+		)).willReturn(200L);
+
+		// DB 조회시 다른 멤버
 		Payment paid = Payment.create(
-			/*member*/ 999L, PLAN_ID, ORDER_ID,
+			999L, PLAN_ID, ORDER_ID,
 			null, null, "cust_999", 1000L, "CARD"
 		);
 		given(paymentRepository.findById(200L)).willReturn(Optional.of(paid));
@@ -144,15 +168,20 @@ class PaymentApplicationServiceImplTest {
 			PaymentDomainException.class,
 			() -> service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 1000, "idem")
 		);
-		// 도메인 예외 메시지에 memberId가 포함되어 있는지 확인
 		assertTrue(ex.getMessage().contains("memberId=10"));
 	}
 
 	@Test
 	@DisplayName("confirmPayment: SAGA 예외 시 RuntimeException 그대로 노출")
 	void confirmPayment_sagaFail() {
-		given(paymentSaga.confirmWithCompensation(any(), any(), anyInt(), any()))
-			.willThrow(new RuntimeException("oops"));
+		// stub member info
+		MemberInfoResponse profile = new MemberInfoResponse(1L,"email", "name");
+		given(memberClient.getMyInfo(MEMBER_ID))
+			.willReturn(new RsData<>("200","OK", profile));
+
+		given(paymentSaga.confirmWithCompensation(
+			anyString(), anyString(), anyInt(), anyString(), anyString(), anyString()
+		)).willThrow(new RuntimeException("oops"));
 
 		assertThrows(
 			RuntimeException.class,
@@ -168,23 +197,27 @@ class PaymentApplicationServiceImplTest {
 			null, null, "cust_" + MEMBER_ID, 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
+
 		PaymentCancelResponse dummyRes = new PaymentCancelResponse(123L, "CANCELLED");
-		given(paymentSaga.cancelWithCompensation(ORDER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST))
-			.willReturn(dummyRes);
+		given(paymentSaga.cancelWithCompensation(
+			ORDER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST
+		)).willReturn(dummyRes);
 
 		PaymentCancelResponse res = service.cancelPayment(
 			MEMBER_ID, ORDER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST
 		);
 
 		assertEquals(dummyRes, res);
-		then(paymentSaga).should().cancelWithCompensation(ORDER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST);
+		then(paymentSaga).should().cancelWithCompensation(
+			ORDER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST
+		);
 	}
 
 	@Test
 	@DisplayName("cancelPayment: 멤버 불일치 시 도메인 예외 발생")
 	void cancelPayment_memberMismatch() {
 		Payment paid = Payment.create(
-			/*member*/999L, PLAN_ID, ORDER_ID,
+			999L, PLAN_ID, ORDER_ID,
 			null, null, "cust_999", 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
@@ -223,7 +256,7 @@ class PaymentApplicationServiceImplTest {
 	@DisplayName("issueBillingKey: 멤버 불일치 시 도메인 예외 발생")
 	void issueBillingKey_memberMismatch() {
 		Payment paid = Payment.create(
-			/*member*/999L, PLAN_ID, ORDER_ID,
+			999L, PLAN_ID, ORDER_ID,
 			null, null, "cust_999", 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
@@ -272,7 +305,7 @@ class PaymentApplicationServiceImplTest {
 	@DisplayName("chargeWithBillingKey: 멤버 불일치 시 도메인 예외 발생")
 	void chargeWithBillingKey_memberMismatch() {
 		Payment paid = Payment.create(
-			/*member*/999L, PLAN_ID, ORDER_ID,
+			999L, PLAN_ID, ORDER_ID,
 			null, "bKey", "cust_999", 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));

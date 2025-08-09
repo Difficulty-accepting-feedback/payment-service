@@ -17,7 +17,9 @@ import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingCha
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentSagaOrchestrator {
@@ -37,35 +39,47 @@ public class PaymentSagaOrchestrator {
 		String paymentKey,
 		String orderId,
 		int amount,
-		String idempotencyKey
+		String idempotencyKey,
+		String customerEmail,
+		String customerName
 	) {
-		// 멱등 키 생성 또는 이전 결과 조회
+		log.info("[SAGA][confirm] 시작 → paymentKey={}, orderId={}, amount={}, idempotencyKey={}, email={}, name={}",
+			paymentKey, orderId, amount, idempotencyKey, customerEmail, customerName);
+
+		log.debug("[SAGA][confirm] 멱등키 예약 시도 → key={}", idempotencyKey);
 		if (!idempotencyAdapter.reserve(idempotencyKey)) {
-			// 이미 같은 키가 처리중 or 완료
+			log.warn("[SAGA][confirm] 중복 요청 차단 → key={}", idempotencyKey);
 			String prev = idempotencyAdapter.getResult(idempotencyKey);
 			if (prev != null) {
-				// 이전에 성공한 결과 반환
+				log.info("[SAGA][confirm] 이전 처리 결과 반환 → paymentId={}", prev);
 				return Long.valueOf(prev);
 			}
-			// 아직 처리 중이면 중복 요청 예외 발생
 			throw new PaymentSagaException(ErrorCode.IDEMPOTENCY_IN_FLIGHT);
 		}
+		log.debug("[SAGA][confirm] 멱등키 예약 성공 → key={}", idempotencyKey);
 
 		try {
-			// 토스 결제 승인 API 호출
-			gatewayPort.confirmPayment(paymentKey, orderId, amount);
-			// DB 저장(리트라이+보상)
+			log.info("[SAGA][confirm] 토스 API 호출 → confirmPayment(paymentKey={}, orderId={}, amount={})",
+				paymentKey, orderId, amount);
+			gatewayPort.confirmPayment(paymentKey, orderId, amount, customerEmail, customerName);
+			log.info("[SAGA][confirm] 토스 API 호출 완료");
+
+			log.info("[SAGA][confirm] DB 저장(saveConfirmation) 시작 → orderId={}", orderId);
 			Long paymentId = retryableService.saveConfirmation(paymentKey, orderId, amount);
-			// 멱등 키 완료 처리
+			log.info("[SAGA][confirm] DB 저장 완료 → paymentId={}", paymentId);
+
+			log.debug("[SAGA][confirm] 멱등키 완료 처리 → key={}, paymentId={}", idempotencyKey, paymentId);
 			idempotencyAdapter.finish(idempotencyKey, paymentId.toString());
+
+			log.info("[SAGA][confirm] 종료 → paymentId={}", paymentId);
 			return paymentId;
+
 		} catch (Exception ex) {
-			// 처리 중 예외 발생하면 멱등 키 리셋
+			log.error("[SAGA][confirm] 에러 발생, 멱등키 무효화 → key={}, error={}", idempotencyKey, ex.getMessage(), ex);
 			idempotencyAdapter.invalidate(idempotencyKey);
 			throw ex;
 		}
 	}
-
 	/**
 	 * 1) 멱등키 reserve/getResult 로직으로 중복 처리 방지
 	 * 2) 토스 자동결제 API 호출

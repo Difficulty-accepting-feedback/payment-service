@@ -17,7 +17,7 @@ public class PaymentGatewayAdapter implements PaymentGatewayPort {
 	private final TossPaymentClient tossClient;
 
 	@Override
-	public void confirmPayment(String paymentKey, String orderId, int amount) {
+	public void confirmPayment(String paymentKey, String orderId, int amount, String customerEmail, String customerName) {
 		tossClient.confirmPayment(paymentKey, orderId, amount);
 	}
 
