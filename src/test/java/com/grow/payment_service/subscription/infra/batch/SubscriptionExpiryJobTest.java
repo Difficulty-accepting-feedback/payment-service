@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.subscription.infra.batch;
+package com.grow.payment_service.subscription.infra.batch;
 
 import static org.mockito.BDDMockito.*;
 

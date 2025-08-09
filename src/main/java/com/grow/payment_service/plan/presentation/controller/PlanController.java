@@ -1,4 +1,4 @@
-package com.grow.payment_service.plan.presentation;
+package com.grow.payment_service.plan.presentation.controller;
 
 import java.util.List;
 import java.util.stream.Collectors;
