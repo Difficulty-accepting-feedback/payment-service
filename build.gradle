@@ -123,6 +123,10 @@ dependencies {
 
 	// Mail
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+	// Swagger
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
+	implementation 'com.danielfrak.code:springdoc-openapi-externalized-documentation:1.0.0'
 }
 
 tasks.named('test') {
