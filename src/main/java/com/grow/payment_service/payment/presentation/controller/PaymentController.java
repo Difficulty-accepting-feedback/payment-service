@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.presentation;
+package com.grow.payment_service.payment.presentation.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

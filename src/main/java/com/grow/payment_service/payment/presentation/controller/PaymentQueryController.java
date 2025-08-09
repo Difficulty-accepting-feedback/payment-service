@@ -1,4 +1,4 @@
-package com.grow.payment_service.payment.presentation;
+package com.grow.payment_service.payment.presentation.controller;
 
 import java.util.List;
 
