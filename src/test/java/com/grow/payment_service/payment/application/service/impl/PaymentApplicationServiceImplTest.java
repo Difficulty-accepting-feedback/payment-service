@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -28,6 +29,7 @@ import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyRe
 import com.grow.payment_service.payment.domain.exception.PaymentDomainException;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
@@ -325,5 +327,73 @@ class PaymentApplicationServiceImplTest {
 			() -> service.chargeWithBillingKey(MEMBER_ID, param, "idem")
 		);
 		assertTrue(ex.getMessage().contains("memberId=10"));
+	}
+
+	@Test
+	@DisplayName("expireIfReady: READY → ABORTED로 전이하고 저장/이력 기록")
+	void expireIfReady_readyToAborted_success() {
+		// given
+		Payment ready = Payment.create(
+			MEMBER_ID, PLAN_ID, ORDER_ID,
+			null, null, "cust_" + MEMBER_ID, 5000L, "CARD"
+		);
+		given(paymentRepository.findByOrderIdForUpdate(ORDER_ID))
+			.willReturn(Optional.of(ready));
+
+		// when
+		service.expireIfReady(MEMBER_ID, ORDER_ID);
+
+		// then
+		// 저장된 Payment가 ABORTED인지 캡쳐로 확인
+		ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+		then(paymentRepository).should().save(paymentCaptor.capture());
+		assertEquals(PayStatus.ABORTED, paymentCaptor.getValue().getPayStatus());
+
+		// 이력 저장 1회 호출 확인
+		then(historyRepository).should(times(1)).save(any());
+		// forUpdate 조회 호출 확인
+		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
+	}
+
+	@Test
+	@DisplayName("expireIfReady: 주문 없음 → PaymentApplicationException(ORDER_NOT_FOUND)")
+	void expireIfReady_orderNotFound_throws() {
+		// given
+		given(paymentRepository.findByOrderIdForUpdate(ORDER_ID))
+			.willReturn(Optional.empty());
+
+		// when
+		PaymentApplicationException ex = assertThrows(
+			PaymentApplicationException.class,
+			() -> service.expireIfReady(MEMBER_ID, ORDER_ID)
+		);
+
+		// then
+		assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
+		then(paymentRepository).should(never()).save(any());
+		then(historyRepository).should(never()).save(any());
+	}
+
+	@Test
+	@DisplayName("expireIfReady: 소유자 불일치 → 도메인 예외 발생 & 저장/이력 없음")
+	void expireIfReady_memberMismatch_throws() {
+		// given
+		Payment others = Payment.create(
+			999L, PLAN_ID, ORDER_ID,
+			null, null, "cust_999", 5000L, "CARD"
+		); // 다른 멤버 소유
+		given(paymentRepository.findByOrderIdForUpdate(ORDER_ID))
+			.willReturn(Optional.of(others));
+
+		// when & then
+		assertThrows(
+			PaymentDomainException.class,
+			() -> service.expireIfReady(MEMBER_ID, ORDER_ID)
+		);
+
+		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
+		then(paymentRepository).should(never()).save(any());
+		then(historyRepository).should(never()).save(any());
 	}
 }
