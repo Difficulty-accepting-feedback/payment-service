@@ -11,6 +11,7 @@ import com.grow.payment_service.payment.application.service.PaymentApplicationSe
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.CancelReason;
+import com.grow.payment_service.payment.domain.model.enums.PayStatus;
 import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
@@ -29,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PaymentApplicationServiceImpl implements PaymentApplicationService {
 
-	private static final String SUCCESS_URL = "http://localhost:8080/confirm";
-	private static final String FAIL_URL    = "http://localhost:8080/confirm?fail=true";
+	private static final String SUCCESS_URL = "http://localhost:3000/me/payment/success";
+	private static final String FAIL_URL    = "http://localhost:3000/me/payment/fail";
 
 	private final PlanRepository                  planRepository;
 	private final OrderIdGenerator                orderIdGenerator;
@@ -85,8 +86,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				orderId,
 				amount,
 				"GROW Plan #" + orderId,
-				SUCCESS_URL + "?memberId=" + memberId + "&planId=" + planId,
-				FAIL_URL    + "&memberId=" + memberId + "&planId=" + planId,
+				SUCCESS_URL,
+				FAIL_URL,
 				planId,
 				plan.getType(),
 				plan.getPeriod()
@@ -283,6 +284,27 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		}
 	}
 
+	/**
+	 * 미결제 주문 만료 메서드
+	 */
+	@Override
+	@Transactional
+	public void expireIfReady(Long memberId, String orderId) {
+		Payment p = paymentRepository.findByOrderIdForUpdate(orderId)
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
+		p.verifyOwnership(memberId);
+
+		if (p.getPayStatus() == PayStatus.READY) {
+			Payment aborted = p.transitionTo(PayStatus.ABORTED);
+			paymentRepository.save(aborted);
+			historyRepository.save(PaymentHistory.create(
+				aborted.getPaymentId(), aborted.getPayStatus(), "사용자 이탈로 주문 만료"
+			));
+			log.info("[주문 만료] orderId={} -> ABORTED", orderId);
+		} else {
+			log.info("[주문 만료 스킵] orderId={}, status={}", orderId, p.getPayStatus());
+		}
+	}
 	/**
 	 * 테스트용 빌링키 발급 상태 전이 메서드
 	 */

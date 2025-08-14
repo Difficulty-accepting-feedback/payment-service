@@ -45,6 +45,9 @@ public interface PaymentApplicationService {
 		String idempotencyKey
 	);
 
+	/** 미결제 주문 만료 */
+	void expireIfReady(Long memberId, String orderId);
+
 	/** 테스트용 빌링키 발급 상태 전이 메서드 */
 	void testTransitionToReady(String orderId, String billingKey);
 }
