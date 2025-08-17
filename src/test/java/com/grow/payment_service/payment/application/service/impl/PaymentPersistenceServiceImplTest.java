@@ -6,8 +6,14 @@ import static org.mockito.BDDMockito.*;
 
 import java.util.Optional;
 
+import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
+import com.grow.payment_service.payment.domain.model.Payment;
+import com.grow.payment_service.payment.domain.model.enums.CancelReason;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
+import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingChargeResponse;
 import org.junit.jupiter.api.DisplayName;
@@ -16,30 +22,22 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
-import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
-import com.grow.payment_service.global.exception.PaymentApplicationException;
-import com.grow.payment_service.payment.domain.model.Payment;
-import com.grow.payment_service.payment.domain.model.enums.CancelReason;
-import com.grow.payment_service.payment.domain.repository.PaymentHistoryRepository;
-
 @ExtendWith(MockitoExtension.class)
 class PaymentPersistenceServiceImplTest {
 
-	@Mock
-	PaymentRepository paymentRepository;
+	@Mock PaymentRepository paymentRepository;
 	@Mock PaymentHistoryRepository historyRepository;
 	@InjectMocks PaymentPersistenceServiceImpl service;
 
 	// helper: create a Payment in given state
 	private Payment makePayment(PayStatus status) {
 		return Payment.of(
-			123L,  // paymentId
-			1L,    // memberId
-			1L,    // planId
+			123L,   // paymentId
+			1L,     // memberId
+			1L,     // planId
 			"ord-1",
-			null,  // paymentKey
-			null,  // billingKey
+			null,   // paymentKey
+			null,   // billingKey
 			"cust_1",
 			500L,
 			status,
@@ -50,26 +48,31 @@ class PaymentPersistenceServiceImplTest {
 	}
 
 	@Test
-	@DisplayName("savePaymentConfirmation: 정상 흐름 → DONE으로 전이")
+	@DisplayName("savePaymentConfirmation: 정상 흐름 → paymentKey 저장 & DONE으로 전이")
 	void savePaymentConfirmation_success() {
 		Payment before = makePayment(PayStatus.READY);
-		given(paymentRepository.findByOrderId("ord-1")).willReturn(Optional.of(before));
+		given(paymentRepository.findByOrderIdForUpdate("ord-1"))
+			.willReturn(Optional.of(before));
 		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
-		Long id = service.savePaymentConfirmation("ord-1");
+		Long id = service.savePaymentConfirmation("ord-1", "pkey-1");
 
 		assertEquals(123L, id);
-		// transitionTo(DONE) 이후 save 호출 및 history 저장
-		then(paymentRepository).should().save(argThat(p -> p.getPayStatus() == PayStatus.DONE));
+		then(paymentRepository).should().save(argThat(p ->
+			p.getPayStatus() == PayStatus.DONE &&
+				"pkey-1".equals(p.getPaymentKey())
+		));
 		then(historyRepository).should().save(any());
 	}
 
 	@Test
 	@DisplayName("savePaymentConfirmation: 주문 미존재 → 예외")
 	void savePaymentConfirmation_notFound() {
-		given(paymentRepository.findByOrderId("ord-1")).willReturn(Optional.empty());
+		given(paymentRepository.findByOrderIdForUpdate("ord-1"))
+			.willReturn(Optional.empty());
+
 		assertThrows(PaymentApplicationException.class, () ->
-			service.savePaymentConfirmation("ord-1")
+			service.savePaymentConfirmation("ord-1", "pkey-1")
 		);
 	}
 
@@ -151,10 +154,11 @@ class PaymentPersistenceServiceImplTest {
 	}
 
 	@Test
-	@DisplayName("saveAutoChargeResult: tossRes.status=‘DONE’ → AUTO_BILLING_APPROVED")
+	@DisplayName("saveAutoChargeResult: tossRes.status='DONE' → AUTO_BILLING_APPROVED")
 	void saveAutoChargeResult_done() {
 		Payment before = makePayment(PayStatus.AUTO_BILLING_IN_PROGRESS);
-		given(paymentRepository.findByOrderId("ord-1")).willReturn(Optional.of(before));
+		given(paymentRepository.findByOrderId("ord-1"))
+			.willReturn(Optional.of(before));
 		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 		TossBillingChargeResponse mockRes = mock(TossBillingChargeResponse.class);
 		given(mockRes.getStatus()).willReturn("DONE");
@@ -168,10 +172,11 @@ class PaymentPersistenceServiceImplTest {
 	}
 
 	@Test
-	@DisplayName("saveAutoChargeResult: tossRes.status≠‘DONE’ → AUTO_BILLING_FAILED")
+	@DisplayName("saveAutoChargeResult: tossRes.status≠'DONE' → AUTO_BILLING_FAILED")
 	void saveAutoChargeResult_failed() {
 		Payment before = makePayment(PayStatus.AUTO_BILLING_IN_PROGRESS);
-		given(paymentRepository.findByOrderId("ord-1")).willReturn(Optional.of(before));
+		given(paymentRepository.findByOrderId("ord-1"))
+			.willReturn(Optional.of(before));
 		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 		TossBillingChargeResponse mockRes = mock(TossBillingChargeResponse.class);
 		given(mockRes.getStatus()).willReturn("ERROR");
@@ -181,6 +186,7 @@ class PaymentPersistenceServiceImplTest {
 		assertEquals(PayStatus.AUTO_BILLING_FAILED.name(), resp.getPayStatus());
 		then(historyRepository).should().save(argThat(h ->
 			h.getStatus() == PayStatus.AUTO_BILLING_FAILED &&
+				h.getReasonDetail() != null &&
 				h.getReasonDetail().contains("실패")
 		));
 	}

@@ -106,14 +106,14 @@ class RetryablePersistenceServiceTest {
 	}
 
 	@Test
-	@DisplayName("saveConfirmation: 저장 성공 시 paymentId 반환")
+	@DisplayName("saveConfirmation: 저장 성공 시 paymentId 반환 (paymentKey 포함)")
 	void saveConfirmation_success() {
-		when(persistenceService.savePaymentConfirmation(orderId)).thenReturn(10L);
+		when(persistenceService.savePaymentConfirmation(orderId, paymentKey)).thenReturn(10L);
 
 		Long id = svc.saveConfirmation(paymentKey, orderId, amount);
 
 		assertEquals(10L, id);
-		verify(persistenceService).savePaymentConfirmation(orderId);
+		verify(persistenceService).savePaymentConfirmation(orderId, paymentKey);
 	}
 
 	@Test
