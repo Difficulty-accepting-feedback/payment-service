@@ -91,8 +91,15 @@ class RetryablePersistenceServiceTest {
 	@Test
 	@DisplayName("recoverAutoCharge: 외부 cancel + 보상 호출 후 SAGA_COMPENSATE_COMPLETED 예외")
 	void recoverAutoCharge_callsCancelAndCompensate_thenSagaCompleted() {
-		when(gatewayPort.cancelPayment(eq(billingKey), eq(CancelReason.SYSTEM_ERROR.name()), eq(amount), eq("보상-자동 결제 취소")))
-			.thenReturn(null);
+		when(tossRes.getPaymentKey()).thenReturn("pk-123"); // 🔹 추가
+
+		when(gatewayPort.cancelPayment(
+			eq("pk-123"),
+			eq(CancelReason.SYSTEM_ERROR.name()),
+			eq(amount),
+			eq("보상-자동 결제 취소")
+		)).thenReturn(null);
+
 		doNothing().when(compTx).compensateAutoChargeFailure(orderId, cause);
 
 		PaymentSagaException ex = assertThrows(
@@ -101,7 +108,13 @@ class RetryablePersistenceServiceTest {
 		);
 		assertEquals(ErrorCode.SAGA_COMPENSATE_COMPLETED, ex.getErrorCode());
 
-		verify(gatewayPort).cancelPayment(eq(billingKey), eq(CancelReason.SYSTEM_ERROR.name()), eq(amount), eq("보상-자동 결제 취소"));
+		// 검증도 paymentKey 기준으로
+		verify(gatewayPort).cancelPayment(
+			eq("pk-123"),
+			eq(CancelReason.SYSTEM_ERROR.name()),
+			eq(amount),
+			eq("보상-자동 결제 취소")
+		);
 		verify(compTx).compensateAutoChargeFailure(orderId, cause);
 	}
 
@@ -153,15 +166,19 @@ class RetryablePersistenceServiceTest {
 	}
 
 	@Test
-	@DisplayName("saveAutoCharge: 저장 성공")
+	@DisplayName("saveAutoCharge: 저장 성공 → AUTO_BILLING_APPROVED + paymentKey 포함")
 	void saveAutoCharge_success() {
-		PaymentConfirmResponse dummy = new PaymentConfirmResponse(99L, "DONE", "e@mail", "name");
+		// 현재 구조: 상태 문자열은 AUTO_BILLING_APPROVED, 3번째 파라미터는 paymentKey
+		PaymentConfirmResponse dummy =
+			new PaymentConfirmResponse(99L, "AUTO_BILLING_APPROVED", "paymentkey", "e@mail", "name");
+
 		when(persistenceService.saveAutoChargeResult(orderId, tossRes)).thenReturn(dummy);
 
 		var res = svc.saveAutoCharge(billingKey, orderId, amount, tossRes);
 
 		assertEquals(99L, res.getPaymentId());
-		assertEquals("DONE", res.getPayStatus());
+		assertEquals("AUTO_BILLING_APPROVED", res.getPayStatus());
+		assertEquals("paymentkey", res.getPaymentKey());
 		verify(persistenceService).saveAutoChargeResult(orderId, tossRes);
 	}
 

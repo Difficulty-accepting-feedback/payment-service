@@ -58,16 +58,31 @@ class PaymentTest {
 			Payment original = Payment.of(
 				PAYMENT_ID, MEMBER_ID, PLAN_ID, ORDER_ID,
 				PAYMENT_KEY, BILLING_KEY, CUSTOMER_KEY,
-				AMOUNT, READY, METHOD,
-				/*failureReason=*/null,
-				/*cancelReason=*/null
+				AMOUNT, READY, METHOD, null, null
 			);
 
-			Payment updated = original.requestCancel((com.grow.payment_service.payment.domain.model.enums.CancelReason) DUMMY_REASON);
+			Payment updated = original.requestCancel((CancelReason) DUMMY_REASON);
 
-			assertAll("requestCancel 성공",
+			assertAll(
 				() -> assertEquals(CANCEL_REQUESTED, updated.getPayStatus()),
-				() -> assertEquals(DUMMY_REASON,    updated.getCancelReason())
+				() -> assertEquals(DUMMY_REASON, updated.getCancelReason())
+			);
+		}
+
+		@Test
+		@DisplayName("AUTO_BILLING_APPROVED → CANCEL_REQUESTED 로 전이 (구독 7일 이내 환불)")
+		void success_fromAutoBillingApproved() {
+			Payment original = Payment.of(
+				PAYMENT_ID, MEMBER_ID, PLAN_ID, ORDER_ID,
+				PAYMENT_KEY, BILLING_KEY, CUSTOMER_KEY,
+				AMOUNT, AUTO_BILLING_APPROVED, METHOD, null, null
+			);
+
+			Payment updated = original.requestCancel((CancelReason) DUMMY_REASON);
+
+			assertAll(
+				() -> assertEquals(CANCEL_REQUESTED, updated.getPayStatus()),
+				() -> assertEquals(DUMMY_REASON, updated.getCancelReason())
 			);
 		}
 
@@ -75,20 +90,19 @@ class PaymentTest {
 		@EnumSource(
 			value = PayStatus.class,
 			mode  = EnumSource.Mode.EXCLUDE,
-			names = {"READY", "DONE"}  // READY, DONE만 허용
+			// ✅ 허용 상태 3개: READY, DONE, AUTO_BILLING_APPROVED
+			names = {"READY", "DONE", "AUTO_BILLING_APPROVED"}
 		)
 		void failure_invalidState(PayStatus invalid) {
 			Payment original = Payment.of(
 				PAYMENT_ID, MEMBER_ID, PLAN_ID, ORDER_ID,
 				PAYMENT_KEY, BILLING_KEY, CUSTOMER_KEY,
-				AMOUNT, invalid, METHOD,
-				/*failureReason=*/null,
-				/*cancelReason=*/null
+				AMOUNT, invalid, METHOD, null, null
 			);
 
 			assertThrows(
 				PaymentDomainException.class,
-				() -> original.requestCancel((com.grow.payment_service.payment.domain.model.enums.CancelReason) DUMMY_REASON)
+				() -> original.requestCancel((CancelReason) DUMMY_REASON)
 			);
 		}
 	}
@@ -240,7 +254,7 @@ class PaymentTest {
 				AMOUNT, AUTO_BILLING_READY, METHOD,
 				/*failureReason=*/null, /*cancelReason=*/null
 			);
-			Payment updated = original.approveAutoBilling();
+			Payment updated = original.approveAutoBilling(PAYMENT_KEY);
 			assertEquals(AUTO_BILLING_APPROVED, updated.getPayStatus());
 		}
 
@@ -253,7 +267,7 @@ class PaymentTest {
 				AMOUNT, AUTO_BILLING_IN_PROGRESS, METHOD,
 				/*failureReason=*/null, /*cancelReason=*/null
 			);
-			Payment updated = original.approveAutoBilling();
+			Payment updated = original.approveAutoBilling(PAYMENT_KEY);
 			assertEquals(AUTO_BILLING_APPROVED, updated.getPayStatus());
 		}
 
@@ -275,7 +289,7 @@ class PaymentTest {
 			);
 			assertThrows(
 				PaymentDomainException.class,
-				original::approveAutoBilling
+				() -> original.approveAutoBilling(PAYMENT_KEY)
 			);
 		}
 	}

@@ -154,36 +154,54 @@ class PaymentPersistenceServiceImplTest {
 	}
 
 	@Test
-	@DisplayName("saveAutoChargeResult: tossRes.status='DONE' → AUTO_BILLING_APPROVED")
+	@DisplayName("saveAutoChargeResult: tossRes.status='DONE' → AUTO_BILLING_APPROVED + paymentKey 반영/반환")
 	void saveAutoChargeResult_done() {
 		Payment before = makePayment(PayStatus.AUTO_BILLING_IN_PROGRESS);
 		given(paymentRepository.findByOrderId("ord-1"))
 			.willReturn(Optional.of(before));
 		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
 		TossBillingChargeResponse mockRes = mock(TossBillingChargeResponse.class);
 		given(mockRes.getStatus()).willReturn("DONE");
+		given(mockRes.getPaymentKey()).willReturn("pk-777");
 
 		PaymentConfirmResponse resp = service.saveAutoChargeResult("ord-1", mockRes);
 
-		assertEquals(PayStatus.AUTO_BILLING_APPROVED.name(), resp.getPayStatus());
-		then(historyRepository).should().save(argThat(h ->
-			h.getStatus() == PayStatus.AUTO_BILLING_APPROVED
+		// 저장 값 검증 (status & paymentKey)
+		then(paymentRepository).should().save(argThat(p ->
+			p.getPayStatus() == PayStatus.AUTO_BILLING_APPROVED &&
+				"pk-777".equals(p.getPaymentKey())
 		));
+
+		// 이력 검증
+		then(historyRepository).should().save(argThat(h ->
+			h.getStatus() == PayStatus.AUTO_BILLING_APPROVED &&
+				h.getReasonDetail() != null &&
+				h.getReasonDetail().contains("paymentKey=pk-777")
+		));
+
+		// 응답 검증 (status & paymentKey)
+		assertEquals(PayStatus.AUTO_BILLING_APPROVED.name(), resp.getPayStatus());
+		assertEquals("pk-777", resp.getPaymentKey());
 	}
 
 	@Test
-	@DisplayName("saveAutoChargeResult: tossRes.status≠'DONE' → AUTO_BILLING_FAILED")
+	@DisplayName("saveAutoChargeResult: tossRes.status≠'DONE' → AUTO_BILLING_FAILED (paymentKey 없음)")
 	void saveAutoChargeResult_failed() {
 		Payment before = makePayment(PayStatus.AUTO_BILLING_IN_PROGRESS);
 		given(paymentRepository.findByOrderId("ord-1"))
 			.willReturn(Optional.of(before));
 		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
 		TossBillingChargeResponse mockRes = mock(TossBillingChargeResponse.class);
 		given(mockRes.getStatus()).willReturn("ERROR");
+		given(mockRes.getPaymentKey()).willReturn(null);
 
 		PaymentConfirmResponse resp = service.saveAutoChargeResult("ord-1", mockRes);
 
 		assertEquals(PayStatus.AUTO_BILLING_FAILED.name(), resp.getPayStatus());
+		assertNull(resp.getPaymentKey());
+
 		then(historyRepository).should().save(argThat(h ->
 			h.getStatus() == PayStatus.AUTO_BILLING_FAILED &&
 				h.getReasonDetail() != null &&
