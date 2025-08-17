@@ -218,10 +218,10 @@ public class Payment {
 	/** 일반 결제 승인: paymentKey 저장 + READY -> DONE 전이 */
 	public Payment approve(String paymentKey) {
 		if (paymentKey == null || paymentKey.isBlank()) {
-			throw PaymentDomainException.invalidStatusTransition(this.payStatus, DONE);
-		}
-		if (!this.payStatus.canTransitionTo(DONE)) {
 			throw PaymentDomainException.InvalidPaymentKey(paymentKey);
+		}
+		if (!this.payStatus.canTransitionTo(PayStatus.DONE)) {
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, PayStatus.DONE);
 		}
 		return new Payment(
 			this.paymentId,

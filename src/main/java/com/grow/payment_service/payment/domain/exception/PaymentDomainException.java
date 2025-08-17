@@ -29,4 +29,10 @@ public class PaymentDomainException extends RuntimeException {
 			String.format("접근 권한이 없습니다. memberId=%d", memberId)
 		);
 	}
+
+	public static PaymentDomainException InvalidPaymentKey(String paymentKey) {
+		return new PaymentDomainException(
+			String.format("유효하지 않은 PaymentKey 입니다. paymentKey=%s", paymentKey)
+		);
+	}
 }
