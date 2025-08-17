@@ -113,14 +113,19 @@ public class Payment {
 		);
 	}
 
-	/** 자동결제 승인 후 상태 전이 */
-	public Payment approveAutoBilling() {
-		if (!this.payStatus.canTransitionTo(AUTO_BILLING_APPROVED))
+	/** 자동결제 승인: paymentKey 저장 + 상태 전이 */
+	public Payment approveAutoBilling(String paymentKey) {
+		if (paymentKey == null || paymentKey.isBlank()) {
+			throw PaymentDomainException.InvalidPaymentKey(paymentKey);
+		}
+		if (!this.payStatus.canTransitionTo(AUTO_BILLING_APPROVED)) {
 			throw PaymentDomainException.invalidStatusTransition(this.payStatus, AUTO_BILLING_APPROVED);
+		}
 		return new Payment(
 			paymentId, memberId, planId, orderId,
-			paymentKey, billingKey, customerKey,
-			totalAmount, PayStatus.AUTO_BILLING_APPROVED,
+			paymentKey,
+			billingKey, customerKey,
+			totalAmount, AUTO_BILLING_APPROVED,
 			method, failureReason, cancelReason
 		);
 	}
