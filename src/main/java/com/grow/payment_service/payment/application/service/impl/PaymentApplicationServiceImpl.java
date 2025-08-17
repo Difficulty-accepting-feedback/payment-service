@@ -166,7 +166,6 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	@Transactional
 	public PaymentCancelResponse cancelPayment(
 		Long memberId,
-		String paymentKey,
 		String orderId,
 		int cancelAmount,
 		CancelReason reason
@@ -181,6 +180,13 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		paid.verifyOwnership(memberId);
 		log.info("[1/2] 소유권 검증 완료 → memberId={} owns orderId={}",
 			memberId, orderId);
+
+		// 서버에서 paymentKey 조회
+		String paymentKey = paid.getPaymentKey();
+		if (paymentKey == null || paymentKey.isBlank()) {
+			log.error("취소 불가: paymentKey 없음 → orderId={}", orderId);
+			throw new PaymentApplicationException(ErrorCode.PAYMENT_CANCEL_ERROR);
+		}
 
 		// [2/2] SAGA 결제 취소 호출
 		log.info("[2/2] SAGA 결제 취소 호출 → paymentKey={}, orderId={}, cancelAmount={}, reason={}",

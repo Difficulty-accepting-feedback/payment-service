@@ -60,7 +60,7 @@ public class PaymentController {
 		@Valid @RequestBody PaymentCancelRequest req
 	) {
 		PaymentCancelResponse res = paymentService.cancelPayment(
-			memberId, req.getPaymentKey(), req.getOrderId(), req.getCancelAmount(), req.getCancelReason()
+			memberId, req.getOrderId(), req.getCancelAmount(), req.getCancelReason()
 		);
 		return ResponseEntity.ok(new RsData<>("200", "결제 취소 성공", res));
 	}
