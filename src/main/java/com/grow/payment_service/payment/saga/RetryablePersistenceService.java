@@ -36,7 +36,7 @@ public class RetryablePersistenceService {
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverConfirm")
 	public Long saveConfirmation(String paymentKey, String orderId, int amount) {
 		log.info("[결제-Retry] 결제 승인 정보 DB 저장 시도: orderId={}", orderId);
-		return persistenceService.savePaymentConfirmation(orderId);
+		return persistenceService.savePaymentConfirmation(orderId, paymentKey);
 	}
 
 	/**
