@@ -141,12 +141,14 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		Payment payment = paymentRepository.findByOrderId(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
 		if ("DONE".equals(tossRes.getStatus())) {
-			payment = payment.approveAutoBilling();
+			//  paymentKey 반영 + 승인 전이
+			payment = payment.approveAutoBilling(tossRes.getPaymentKey());
+
 			historyRepository.save(
 				PaymentHistory.create(
 					payment.getPaymentId(),
 					payment.getPayStatus(),
-					"자동결제 승인 완료"
+					"자동결제 승인 완료" + " (paymentKey=" + payment.getPaymentKey() + ")"
 				)
 			);
 		} else {
@@ -163,6 +165,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		return new PaymentConfirmResponse(
 			payment.getPaymentId(),
 			payment.getPayStatus().name(),
+			tossRes.getPaymentKey(),
 			null,
 			null
 		);
