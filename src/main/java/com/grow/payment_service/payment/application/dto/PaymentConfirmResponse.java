@@ -8,6 +8,7 @@ import lombok.Getter;
 public class PaymentConfirmResponse  {
 	private final Long paymentId;
 	private final String payStatus;
+	private String paymentKey;
 	private final String customerEmail;
 	private final String customerName;
 }

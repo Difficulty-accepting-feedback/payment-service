@@ -131,7 +131,7 @@ public class RetryablePersistenceService {
 		log.error("[결제-Retry] 자동결제 승인 결과 DB 저장 실패, 보상 트랜잭션 실행: orderId={}, cause={}", orderId, t.toString());
 		try {
 			gatewayPort.cancelPayment(
-				billingKey,
+				tossRes.getPaymentKey(),
 				CancelReason.SYSTEM_ERROR.name(),
 				amount,
 				"보상-자동 결제 취소"

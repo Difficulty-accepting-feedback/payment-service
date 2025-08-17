@@ -100,6 +100,7 @@ public class PaymentSagaOrchestrator {
 				return new PaymentConfirmResponse(
 					Long.valueOf(prev),
 					existing.getPayStatus().name(),
+					existing.getPaymentKey(),
 					param.getCustomerEmail(),
 					param.getCustomerName()
 				);
