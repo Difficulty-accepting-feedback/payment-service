@@ -215,6 +215,53 @@ public class Payment {
 		}
 	}
 
+	/** 일반 결제 승인: paymentKey 저장 + READY -> DONE 전이 */
+	public Payment approve(String paymentKey) {
+		if (paymentKey == null || paymentKey.isBlank()) {
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, DONE);
+		}
+		if (!this.payStatus.canTransitionTo(DONE)) {
+			throw PaymentDomainException.InvalidPaymentKey(paymentKey);
+		}
+		return new Payment(
+			this.paymentId,
+			this.memberId,
+			this.planId,
+			this.orderId,
+			paymentKey,
+			this.billingKey,
+			this.customerKey,
+			this.totalAmount,
+			DONE,
+			this.method,
+			null,
+			null
+		);
+	}
+
+	/** 미결제 만료: READY -> ABORTED 전이 */
+	public Payment expire() {
+		if (!this.payStatus.canTransitionTo(ABORTED)) {
+			throw PaymentDomainException.invalidStatusTransition(this.payStatus, ABORTED);
+		}
+		return new Payment(
+			this.paymentId,
+			this.memberId,
+			this.planId,
+			this.orderId,
+			this.paymentKey,
+			this.billingKey,
+			this.customerKey,
+			this.totalAmount,
+			ABORTED,
+			this.method,
+			null,
+			this.cancelReason
+		);
+	}
+
+
+
 	public static Payment of(Long paymentId, Long memberId, Long planId, String orderId,
 		String paymentKey, String billingKey, String customerKey,
 		Long totalAmount, PayStatus payStatus, String method,
