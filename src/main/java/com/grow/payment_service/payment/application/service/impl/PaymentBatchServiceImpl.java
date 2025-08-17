@@ -170,8 +170,16 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 			log.info("[자동결제 성공] paymentId={}, idemKey={}, 결과={}",
 				paymentId, idemKey, res.getPayStatus());
 
+			String approvedPaymentKey = res.getPaymentKey();
+			if (approvedPaymentKey == null || approvedPaymentKey.isBlank()) {
+				log.error("[자동결제] 성공 응답에 paymentKey 누락: paymentId={}, orderId={}",
+					paymentId, inProgress.getOrderId());
+				throw new PaymentApplicationException(ErrorCode.BATCH_AUTO_CHARGE_ERROR
+				);
+			}
+
 			// IN_PROGRESS -> APPROVED 전이
-			Payment approved = inProgress.approveAutoBilling();
+			Payment approved = inProgress.approveAutoBilling(approvedPaymentKey);
 			paymentRepository.save(approved);
 			historyRepository.save(PaymentHistory.create(
 				approved.getPaymentId(),
