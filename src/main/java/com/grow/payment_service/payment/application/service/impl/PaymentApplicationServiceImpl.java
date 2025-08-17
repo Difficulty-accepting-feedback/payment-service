@@ -1,5 +1,8 @@
 package com.grow.payment_service.payment.application.service.impl;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -181,7 +184,87 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		log.info("[1/2] 소유권 검증 완료 → memberId={} owns orderId={}",
 			memberId, orderId);
 
-		// 서버에서 paymentKey 조회
+		// 플랜 조회 (구독 여부 판단용)
+		Plan plan = planRepository.findById(paid.getPlanId())
+			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR));
+
+		// 구독(자동결제) 플랜이면 7일 환불 정책 적용
+		// - 7일 이내: 전액 환불(토스 취소)
+		// - 7일 초과: 다음달부터 해지(빌링키 제거)
+		// ─────────────────────────────────────────────────────────────
+		if (plan.isAutoRenewal()) {
+			var lastApprovalOpt = historyRepository.findLastByPaymentIdAndStatuses(
+				paid.getPaymentId(),
+				List.of(PayStatus.DONE, PayStatus.AUTO_BILLING_APPROVED)
+			);
+
+			boolean within7Days = false;
+			if (lastApprovalOpt.isPresent()) {
+				LocalDateTime approvedAt = lastApprovalOpt.get().getChangedAt();
+				within7Days = !approvedAt.plusDays(7).isBefore(LocalDateTime.now());
+			}
+
+			if (within7Days) {
+				// ▶ 7일 이내 = 전액 환불 (토스 취소)
+				String paymentKey = paid.getPaymentKey();
+				if (paymentKey == null || paymentKey.isBlank()) {
+					// 자동결제 승인 시 paymentKey를 저장하지 않았다면 환불 불가 → 에러 처리
+					log.error("취소 불가: paymentKey 없음 → orderId={}", orderId);
+					throw new PaymentApplicationException(ErrorCode.PAYMENT_CANCEL_ERROR);
+				}
+				int fullAmount = paid.getTotalAmount() == null
+					? cancelAmount
+					: paid.getTotalAmount().intValue();
+
+				// [2/2] SAGA 결제 취소 호출 → (로그/주석 유지)
+				log.info("[2/2] SAGA 결제 취소 호출 → paymentKey={}, orderId={}, cancelAmount={}, reason={}",
+					paymentKey, orderId, fullAmount, reason);
+				try {
+					PaymentCancelResponse res = paymentSaga.cancelWithCompensation(
+						paymentKey, orderId, fullAmount, reason
+					);
+					log.info("[2/2] SAGA 결제 취소 완료 → paymentKey={}, orderId={}",
+						paymentKey, orderId);
+					return res;
+				} catch (Exception ex) {
+					log.error("결제 취소 실패: paymentKey={}, orderId={}, cancelAmount={}",
+						paymentKey, orderId, fullAmount, ex);
+					throw new PaymentApplicationException(
+						ErrorCode.PAYMENT_CANCEL_ERROR, ex
+					);
+				}
+			} else {
+				// 7일 초과 = 다음달부터 해지(빌링키 제거)
+				try {
+					Payment toSave = paid;
+					// 방금 달 결제가 APPROVED 상태라면 다음 사이클 준비 상태로 리셋
+					if (toSave.getPayStatus() == PayStatus.AUTO_BILLING_APPROVED) {
+						toSave = toSave.resetForNextCycle();
+					}
+					// 빌링키 제거 + ABORTED 전이
+					toSave = toSave.clearBillingKey();
+					paymentRepository.save(toSave);
+
+					historyRepository.save(
+						PaymentHistory.create(
+							toSave.getPaymentId(),
+							toSave.getPayStatus(),
+							"구독 해지 예약(다음 결제 미청구)"
+						)
+					);
+
+					return new PaymentCancelResponse(
+						toSave.getPaymentId(),
+						toSave.getPayStatus().name()
+					);
+				} catch (Exception ex) {
+					log.error("구독 해지 예약 실패: orderId={}", orderId, ex);
+					throw new PaymentApplicationException(ErrorCode.PAYMENT_CANCEL_ERROR, ex);
+				}
+			}
+		}
+
+		// 일회성 결제(구독 아님): 일단은 전액 환불 처리, 추후에 상태를 추가해서 멘토링 구매하고 게시판 들어가던가 했을때 상태 바꿔서 환불 안되게 해야할듯
 		String paymentKey = paid.getPaymentKey();
 		if (paymentKey == null || paymentKey.isBlank()) {
 			log.error("취소 불가: paymentKey 없음 → orderId={}", orderId);
