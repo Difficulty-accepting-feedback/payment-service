@@ -31,10 +31,16 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 	/** 결제 승인 후 DB 저장 */
 	@Override
 	@Transactional
-	public Long savePaymentConfirmation(String orderId) {
-		Payment payment = paymentRepository.findByOrderId(orderId)
+	public Long savePaymentConfirmation(String orderId, String paymentKey) {
+		Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
-		payment = payment.transitionTo(PayStatus.DONE);
+
+		// 이미 DONE이면 그대로 반환
+		if (payment.getPayStatus() == PayStatus.DONE) {
+			return payment.getPaymentId();
+		}
+
+		payment = payment.approve(paymentKey);   // 키 저장 + DONE 전이
 		payment = paymentRepository.save(payment);
 		historyRepository.save(
 			PaymentHistory.create(
@@ -45,6 +51,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		);
 		return payment.getPaymentId();
 	}
+
 
 	/** 결제 취소 요청 후 DB 저장 (Pessimistic Lock 적용) */
 	@Override
@@ -134,12 +141,14 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		Payment payment = paymentRepository.findByOrderId(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
 		if ("DONE".equals(tossRes.getStatus())) {
-			payment = payment.approveAutoBilling();
+			//  paymentKey 반영 + 승인 전이
+			payment = payment.approveAutoBilling(tossRes.getPaymentKey());
+
 			historyRepository.save(
 				PaymentHistory.create(
 					payment.getPaymentId(),
 					payment.getPayStatus(),
-					"자동결제 승인 완료"
+					"자동결제 승인 완료" + " (paymentKey=" + payment.getPaymentKey() + ")"
 				)
 			);
 		} else {
@@ -156,6 +165,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		return new PaymentConfirmResponse(
 			payment.getPaymentId(),
 			payment.getPayStatus().name(),
+			tossRes.getPaymentKey(),
 			null,
 			null
 		);

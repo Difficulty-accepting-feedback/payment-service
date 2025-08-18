@@ -12,7 +12,7 @@ import com.grow.payment_service.payment.infra.paymentprovider.dto.TossBillingCha
 public interface PaymentPersistenceService {
 
 	/** 결제 승인 후 DB 저장 */
-	Long savePaymentConfirmation(String orderId);
+	Long savePaymentConfirmation(String orderId, String paymentKey);
 
 	/** 결제 취소 요청 후 DB 저장 */
 	PaymentCancelResponse requestCancel(String orderId, CancelReason reason, int amount);

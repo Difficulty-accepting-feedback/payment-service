@@ -212,7 +212,7 @@ class PaymentSagaOrchestratorTest {
 		)).willReturn(tossCharge);
 
 		given(retryableService.saveAutoCharge("bkey", "oid", 500, tossCharge))
-			.willReturn(new PaymentConfirmResponse(99L, "DONE", "e@mail", "name"));
+			.willReturn(new PaymentConfirmResponse(99L, "DONE", "paymentkey", "e@mail", "name"));
 
 		PaymentConfirmResponse res = saga.autoChargeWithCompensation(param, "idem-key");
 

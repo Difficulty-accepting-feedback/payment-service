@@ -25,7 +25,6 @@ public interface PaymentApplicationService {
 	/** 결제 취소 요청 처리(외부 API 호출 + 퍼시스턴스 분리) */
 	PaymentCancelResponse cancelPayment(
 		Long memberId,
-		String paymentKey,
 		String orderId,
 		int cancelAmount,
 		CancelReason cancelReason

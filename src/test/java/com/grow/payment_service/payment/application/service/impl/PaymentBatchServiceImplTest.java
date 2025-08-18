@@ -155,7 +155,8 @@ class PaymentBatchServiceImplTest {
 			5L,
 			PayStatus.AUTO_BILLING_APPROVED.name(),
 			"foo@ex.com",
-			"FooNick"
+			"FooNick",
+			"paymentKey-5"
 		);
 		given(paymentService.chargeWithBillingKey(
 			eq(50L),

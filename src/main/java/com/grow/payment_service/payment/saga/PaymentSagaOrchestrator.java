@@ -100,6 +100,7 @@ public class PaymentSagaOrchestrator {
 				return new PaymentConfirmResponse(
 					Long.valueOf(prev),
 					existing.getPayStatus().name(),
+					existing.getPaymentKey(),
 					param.getCustomerEmail(),
 					param.getCustomerName()
 				);
@@ -109,6 +110,10 @@ public class PaymentSagaOrchestrator {
 		}
 
 		try {
+			// ✅ null-safe 기본값 처리 (NPE 방지)
+			final int taxFree   = (param.getTaxFreeAmount() == null) ? 0 : param.getTaxFreeAmount();
+			final int taxExempt = (param.getTaxExemptionAmount() == null) ? 0 : param.getTaxExemptionAmount();
+
 			// 토스 자동결제 API 호출
 			TossBillingChargeResponse toss = gatewayPort.chargeWithBillingKey(
 				param.getBillingKey(),
@@ -118,8 +123,8 @@ public class PaymentSagaOrchestrator {
 				param.getOrderName(),
 				param.getCustomerEmail(),
 				param.getCustomerName(),
-				param.getTaxFreeAmount(),
-				param.getTaxExemptionAmount()
+				taxFree,          // ← null이면 0
+				taxExempt         // ← null이면 0
 			);
 
 			// DB 저장(리트라이+보상)

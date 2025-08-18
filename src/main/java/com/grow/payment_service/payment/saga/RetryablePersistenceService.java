@@ -36,7 +36,7 @@ public class RetryablePersistenceService {
 	@Retry(name = "dataSaveInstance", fallbackMethod = "recoverConfirm")
 	public Long saveConfirmation(String paymentKey, String orderId, int amount) {
 		log.info("[결제-Retry] 결제 승인 정보 DB 저장 시도: orderId={}", orderId);
-		return persistenceService.savePaymentConfirmation(orderId);
+		return persistenceService.savePaymentConfirmation(orderId, paymentKey);
 	}
 
 	/**
@@ -131,7 +131,7 @@ public class RetryablePersistenceService {
 		log.error("[결제-Retry] 자동결제 승인 결과 DB 저장 실패, 보상 트랜잭션 실행: orderId={}, cause={}", orderId, t.toString());
 		try {
 			gatewayPort.cancelPayment(
-				billingKey,
+				tossRes.getPaymentKey(),
 				CancelReason.SYSTEM_ERROR.name(),
 				amount,
 				"보상-자동 결제 취소"

@@ -82,6 +82,7 @@ public enum PayStatus {
 			)),
 			// AUTO_BILLING_APPROVED → 다음 달 READY로 리셋
 			entry(AUTO_BILLING_APPROVED, EnumSet.of(
+				CANCEL_REQUESTED,
 				AUTO_BILLING_READY
 			)),
 			// 자동결제 승인/실패 이후 -> 종료
