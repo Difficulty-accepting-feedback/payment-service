@@ -465,7 +465,6 @@ class PaymentApplicationServiceImplTest {
 	@Test
 	@DisplayName("cancelPayment(원타임): paymentKey로 취소 호출되고 요청 금액 사용")
 	void cancelPayment_oneTime_success() {
-		// 원타임 플랜으로 오버라이드 (isAutoRenewal() = false)
 		Plan mockPlan = mock(Plan.class);
 		given(mockPlan.isAutoRenewal()).willReturn(false);
 		given(planRepository.findById(PLAN_ID)).willReturn(Optional.of(mockPlan));

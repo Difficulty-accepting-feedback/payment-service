@@ -29,7 +29,6 @@ class PaymentPersistenceServiceImplTest {
 	@Mock PaymentHistoryRepository historyRepository;
 	@InjectMocks PaymentPersistenceServiceImpl service;
 
-	// helper: create a Payment in given state
 	private Payment makePayment(PayStatus status) {
 		return Payment.of(
 			123L,   // paymentId

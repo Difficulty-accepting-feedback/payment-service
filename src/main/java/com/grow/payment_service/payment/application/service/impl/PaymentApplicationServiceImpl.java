@@ -216,7 +216,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 					? cancelAmount
 					: paid.getTotalAmount().intValue();
 
-				// [2/2] SAGA 결제 취소 호출 → (로그/주석 유지)
+				// [2/2] SAGA 결제 취소 호출
 				log.info("[2/2] SAGA 결제 취소 호출 → paymentKey={}, orderId={}, cancelAmount={}, reason={}",
 					paymentKey, orderId, fullAmount, reason);
 				try {
