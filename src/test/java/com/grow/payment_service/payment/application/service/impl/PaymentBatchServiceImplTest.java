@@ -15,6 +15,7 @@ import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
@@ -42,6 +43,7 @@ class PaymentBatchServiceImplTest {
 	@Mock private RedisIdempotencyAdapter idempotencyAdapter;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
 	@Mock private MemberClient memberClient;
+	@Mock private PaymentNotificationPublisher publisher;
 
 	@InjectMocks
 	private PaymentBatchServiceImpl batchService;
@@ -104,12 +106,19 @@ class PaymentBatchServiceImplTest {
 
 		batchService.markAutoChargeFailedPermanently();
 
+		// 저장된 엔티티: billingKey 제거 + 상태 ABORTED
 		then(paymentRepository).should().save(argThat(cleared ->
 			cleared.getBillingKey() == null &&
 				cleared.getPayStatus() == PayStatus.ABORTED
 		));
-		then(historyRepository).should()
-			.save(any(PaymentHistory.class));
+		// 히스토리 기록
+		then(historyRepository).should().save(any(PaymentHistory.class));
+		//  자동결제 실패 알림 전송 검증
+		then(publisher).should().autoBillingFailed(
+			eq(p.getMemberId()),
+			eq(p.getOrderId()),
+			eq(p.getTotalAmount().intValue())
+		);
 	}
 
 	@Test

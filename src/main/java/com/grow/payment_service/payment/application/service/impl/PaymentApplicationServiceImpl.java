@@ -141,9 +141,6 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		);
 		log.info("[2/4] SAGA 결제 승인 완료 → paymentId={}", paymentId);
 
-		// 결제 승인 알림
-		publisher.paymentApproved(memberId, orderId, amount);
-
 		// [3/4] 주문 조회 & 소유권 검증
 		log.info("[3/4] 주문 조회 및 소유권 검증 → paymentId={}", paymentId);
 		Payment paid = paymentRepository.findById(paymentId)
@@ -151,6 +148,9 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		paid.verifyOwnership(memberId);
 		log.info("[3/4] 소유권 검증 완료 → memberId={} owns paymentId={}",
 			memberId, paymentId);
+
+		// 결제 승인 알림
+		publisher.paymentApproved(memberId, orderId, amount);
 
 		// [4/4] 구독 플랜 갱신 처리
 		log.info("[4/4] Plan 조회 → planId={}", paid.getPlanId());
