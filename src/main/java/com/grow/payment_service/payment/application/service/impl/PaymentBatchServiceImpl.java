@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
+import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
 import com.grow.payment_service.payment.application.service.PaymentBatchService;
 import com.grow.payment_service.payment.domain.model.Payment;
@@ -39,6 +40,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final RedisIdempotencyAdapter idempotencyAdapter;
 	private final SubscriptionHistoryApplicationService subscriptionService;
 	private final MemberClient memberClient;
+	private final PaymentNotificationPublisher publisher;
 
 	/**
 	 * 특정 회원의 payment 객체에서 빌링키를 제거합니다.
@@ -106,6 +108,13 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 					cleared.getPayStatus(),
 					"자동결제 재시도 한계 도달 -> 실패 처리 및 빌링키 제거"
 				)
+			);
+
+			// 자동결제 실패 알림
+			publisher.autoBillingFailed(
+				cleared.getMemberId(),
+				cleared.getOrderId(),
+				cleared.getTotalAmount() == null ? 0 : cleared.getTotalAmount().intValue()
 			);
 		}
 		log.info("[자동결제] 5회 재시도 후 실패 상태 전이 완료: count={}", targets.size());
@@ -198,6 +207,15 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 		} catch (Exception ex) {
 			log.error("[자동결제 실패] paymentId={}, 원인={}", paymentId, ex.getMessage(), ex);
+
+
+			// 자동결제 실패 알림
+			publisher.autoBillingFailed(
+				p.getMemberId(),
+				p.getOrderId(),
+				p.getTotalAmount() == null ? 0 : p.getTotalAmount().intValue()
+			);
+
 			throw new PaymentApplicationException(
 				ErrorCode.BATCH_AUTO_CHARGE_ERROR, ex
 			);
