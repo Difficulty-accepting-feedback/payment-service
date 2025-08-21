@@ -40,7 +40,7 @@ public class PaymentNotificationPublisher {
 		publish(memberId, "APPROVED", title, content, orderId, Integer.valueOf(amount));
 	}
 
-	/** 결제 실패 */
+	/** 결제 실패(필요 시 사용) */
 	public void paymentFailed(Long memberId, String orderId, int amount) {
 		String title = "결제가 실패했습니다";
 		String content = "주문 " + orderId + " 결제가 실패했어요. 다시 시도해 주세요.";
