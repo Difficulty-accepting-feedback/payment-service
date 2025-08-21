@@ -10,6 +10,7 @@ import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.*;
+import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
@@ -34,15 +35,16 @@ import lombok.extern.slf4j.Slf4j;
 public class PaymentApplicationServiceImpl implements PaymentApplicationService {
 
 	private static final String SUCCESS_URL = "http://localhost:3000/me/payment/success";
-	private static final String FAIL_URL    = "http://localhost:3000/me/payment/fail";
+	private static final String FAIL_URL = "http://localhost:3000/me/payment/fail";
 
-	private final PlanRepository                  planRepository;
-	private final OrderIdGenerator                orderIdGenerator;
-	private final PaymentRepository               paymentRepository;
-	private final PaymentHistoryRepository        historyRepository;
-	private final PaymentSagaOrchestrator         paymentSaga;
+	private final PlanRepository planRepository;
+	private final OrderIdGenerator orderIdGenerator;
+	private final PaymentRepository paymentRepository;
+	private final PaymentHistoryRepository historyRepository;
+	private final PaymentSagaOrchestrator paymentSaga;
 	private final SubscriptionHistoryApplicationService subscriptionService;
-	private final MemberClient                    memberClient;
+	private final MemberClient memberClient;
+	private final PaymentNotificationPublisher publisher;
 
 	/**
 	 * 주문 DB 생성 후 클라이언트에게 데이터 반환
@@ -66,7 +68,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				memberId, planId, orderId,
 				null, null,
 				"cust_" + memberId,
-				(long) amount,
+				(long)amount,
 				"CARD"
 			);
 			payment = paymentRepository.save(payment);
@@ -122,7 +124,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		RsData<MemberInfoResponse> rs = memberClient.getMyInfo(memberId);
 		MemberInfoResponse profile = rs.getData();
 		String customerEmail = profile.getEmail();
-		String customerName  = profile.getNickname();
+		String customerName = profile.getNickname();
 		log.info("[1/4] 멤버 정보 조회 완료 → email={}, nickname={}",
 			customerEmail, customerName);
 
@@ -146,6 +148,9 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		paid.verifyOwnership(memberId);
 		log.info("[3/4] 소유권 검증 완료 → memberId={} owns paymentId={}",
 			memberId, paymentId);
+
+		// 결제 승인 알림
+		publisher.paymentApproved(memberId, orderId, amount);
 
 		// [4/4] 구독 플랜 갱신 처리
 		log.info("[4/4] Plan 조회 → planId={}", paid.getPlanId());
@@ -225,6 +230,10 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 					);
 					log.info("[2/2] SAGA 결제 취소 완료 → paymentKey={}, orderId={}",
 						paymentKey, orderId);
+
+					// 결제 취소 알림
+					publisher.cancelled(memberId, orderId, fullAmount);
+
 					return res;
 				} catch (Exception ex) {
 					log.error("결제 취소 실패: paymentKey={}, orderId={}, cancelAmount={}",
@@ -253,6 +262,9 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 						)
 					);
 
+					// 7일 초과 결제 취소 알림
+					publisher.cancelScheduled(memberId, orderId);
+
 					return new PaymentCancelResponse(
 						toSave.getPaymentId(),
 						toSave.getPayStatus().name()
@@ -280,6 +292,10 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			);
 			log.info("[2/2] SAGA 결제 취소 완료 → paymentKey={}, orderId={}",
 				paymentKey, orderId);
+
+			// 결제 취소 알림
+			publisher.cancelled(memberId, orderId, cancelAmount);
+
 			return res;
 		} catch (Exception ex) {
 			log.error("결제 취소 실패: paymentKey={}, orderId={}, cancelAmount={}",
@@ -320,6 +336,10 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			PaymentIssueBillingKeyResponse res = paymentSaga.issueKeyWithCompensation(param);
 			log.info("[2/2] SAGA 빌링키 발급 완료 → orderId={}, billingKey={}",
 				param.getOrderId(), res.getBillingKey());
+
+			// 자동결제 승인 알림
+			publisher.billingKeyIssued(memberId, param.getOrderId());
+
 			return res;
 		} catch (Exception ex) {
 			log.error("빌링키 발급 실패: orderId={}", param.getOrderId(), ex);
@@ -361,6 +381,10 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		try {
 			PaymentConfirmResponse res = paymentSaga.autoChargeWithCompensation(param, idempotencyKey);
 			log.info("[2/3] SAGA 자동결제 완료 → paymentId={}", res.getPaymentId());
+
+			// 자동결제 승인 알림
+			publisher.autoBillingApproved(memberId, param.getOrderId(), param.getAmount());
+
 			// [3/3] 결과 반환
 			log.info("[3/3] 자동결제 응답 반환 → paymentId={}", res.getPaymentId());
 			return res;
@@ -394,6 +418,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			log.info("[주문 만료 스킵] orderId={}, status={}", orderId, p.getPayStatus());
 		}
 	}
+
 	/**
 	 * 테스트용 빌링키 발급 상태 전이 메서드
 	 */

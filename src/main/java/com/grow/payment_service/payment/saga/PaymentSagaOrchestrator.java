@@ -29,7 +29,9 @@ public class PaymentSagaOrchestrator {
 	private final RedisIdempotencyAdapter idempotencyAdapter;
 	private final PaymentPersistenceService persistenceService;
 
+
 	/**
+	 * 결제 승인 처리
 	 * 1) 멱등키 reserve/getResult 로직으로 중복 처리 방지
 	 * 2) 토스 결제 승인 API 호출
 	 * 3) DB 저장(리트라이+보상)
@@ -81,6 +83,7 @@ public class PaymentSagaOrchestrator {
 		}
 	}
 	/**
+	 * 자동 결제 승인 처리
 	 * 1) 멱등키 reserve/getResult 로직으로 중복 처리 방지
 	 * 2) 토스 자동결제 API 호출
 	 * 3) DB 저장(리트라이+보상)
@@ -145,6 +148,7 @@ public class PaymentSagaOrchestrator {
 	}
 
 	/**
+	 * 결제 취소 처리
 	 * 1) DB 저장(취소 요청, 리트라이+보상)
 	 * 2) 토스 결제 취소 API 호출
 	 * 3) DB 저장(취소 완료, 리트라이+보상)
@@ -161,6 +165,7 @@ public class PaymentSagaOrchestrator {
 	}
 
 	/**
+	 * 빌링키 발급 처리
 	 * 1) 토스 빌링키 발급 API 호출
 	 * 2) DB 저장(리트라이+보상)
 	 */

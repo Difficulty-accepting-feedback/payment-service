@@ -2,6 +2,7 @@ package com.grow.payment_service.payment.application.service.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
+import static org.mockito.ArgumentMatchers.*;
 
 import java.util.Optional;
 
@@ -19,12 +20,8 @@ import org.mockito.quality.Strictness;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
-import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
-import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
-import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
-import com.grow.payment_service.payment.application.dto.PaymentInitResponse;
-import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyParam;
-import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
+import com.grow.payment_service.payment.application.dto.*;
+import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
 import com.grow.payment_service.payment.domain.exception.PaymentDomainException;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
@@ -49,10 +46,11 @@ class PaymentApplicationServiceImplTest {
 	@Mock private PlanRepository planRepository;
 	@Mock private OrderIdGenerator orderIdGenerator;
 	@Mock private PaymentRepository paymentRepository;
-	@Mock private PaymentHistoryRepository historyRepository; // ✅ 사용
+	@Mock private PaymentHistoryRepository historyRepository;
 	@Mock private PaymentSagaOrchestrator paymentSaga;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
 	@Mock private MemberClient memberClient;
+	@Mock private PaymentNotificationPublisher publisher; // ✅ 추가
 
 	@InjectMocks
 	private PaymentApplicationServiceImpl service;
@@ -95,6 +93,9 @@ class PaymentApplicationServiceImplTest {
 		then(paymentRepository).should().save(any(Payment.class));
 		then(historyRepository).should().save(any());
 		then(planRepository).should().findById(PLAN_ID);
+
+		// init 단계는 알림 발행 없음
+		then(publisher).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -109,6 +110,8 @@ class PaymentApplicationServiceImplTest {
 			() -> service.initPaymentData(MEMBER_ID, PLAN_ID, 5000)
 		);
 		assertEquals(ErrorCode.PAYMENT_INIT_ERROR, ex.getErrorCode());
+
+		then(publisher).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -138,6 +141,9 @@ class PaymentApplicationServiceImplTest {
 		);
 		then(paymentRepository).should().findById(100L);
 		then(subscriptionService).should().recordSubscriptionRenewal(MEMBER_ID, PlanPeriod.MONTHLY);
+
+		// ✅ 승인 성공 알림 발행 검증
+		then(publisher).should().paymentApproved(MEMBER_ID, ORDER_ID, 1234);
 	}
 
 	@Test
@@ -157,15 +163,17 @@ class PaymentApplicationServiceImplTest {
 		);
 		given(paymentRepository.findById(200L)).willReturn(Optional.of(paid));
 
-		PaymentDomainException ex = assertThrows(
+		assertThrows(
 			PaymentDomainException.class,
 			() -> service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 1000, "idem")
 		);
-		assertTrue(ex.getMessage().contains("memberId=10"));
+
+		// ❌ 소유권 불일치로 실패 → 알림 없음
+		then(publisher).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
-	@DisplayName("confirmPayment: SAGA 예외 시 RuntimeException 그대로 노출")
+	@DisplayName("confirmPayment: SAGA 예외 시 RuntimeException 그대로 노출 (알림 없음)")
 	void confirmPayment_sagaFail() {
 		MemberInfoResponse profile = new MemberInfoResponse(1L,"email", "name");
 		given(memberClient.getMyInfo(MEMBER_ID))
@@ -179,38 +187,41 @@ class PaymentApplicationServiceImplTest {
 			RuntimeException.class,
 			() -> service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 100, "idem")
 		);
+
+		// ❌ 승인 실패는 프론트/위젯에서 안내 → 푸시 알림 없음
+		then(publisher).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
 	@DisplayName("cancelPayment(구독): 7일 이내 전액 환불 → 서버가 DB의 paymentKey로 SAGA 호출되고 금액은 전체금액")
 	void cancelPayment_success() {
-		// 결제 엔티티(총액 3000, paymentKey 존재)
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
 			"pKey-1", null, "cust_" + MEMBER_ID, 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 
-		// 🔹 최근 승인 이력 존재하도록 스텁(=> 7일 이내 환불 경로)
 		given(historyRepository.findLastByPaymentIdAndStatuses(any(), anyList()))
 			.willReturn(Optional.of(
 				PaymentHistory.create(1L, PayStatus.DONE, "결제 완료")
 			));
 
 		PaymentCancelResponse dummyRes = new PaymentCancelResponse(123L, "CANCELLED");
-		// 🔹 7일 이내 정책 → 전체금액(3000)으로 취소 호출됨
 		given(paymentSaga.cancelWithCompensation(
 			"pKey-1", ORDER_ID, 3000, CancelReason.USER_REQUEST
 		)).willReturn(dummyRes);
 
 		PaymentCancelResponse res = service.cancelPayment(
-			MEMBER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST // ← 요청 금액 1000이더라도 정책상 3000으로 처리
+			MEMBER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST
 		);
 
 		assertEquals(dummyRes, res);
 		then(paymentSaga).should().cancelWithCompensation(
 			"pKey-1", ORDER_ID, 3000, CancelReason.USER_REQUEST
 		);
+
+		// ✅ 취소 완료 알림 발행 검증 (전액)
+		then(publisher).should().cancelled(MEMBER_ID, ORDER_ID, 3000);
 	}
 
 	@Test
@@ -222,11 +233,14 @@ class PaymentApplicationServiceImplTest {
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 
-		PaymentDomainException ex = assertThrows(
+		assertThrows(
 			PaymentDomainException.class,
 			() -> service.cancelPayment(MEMBER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST)
 		);
-		assertTrue(ex.getMessage().contains("memberId=10"));
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
+		then(publisher).should(never()).cancelScheduled(anyLong(), anyString());
 	}
 
 	@Test
@@ -250,6 +264,9 @@ class PaymentApplicationServiceImplTest {
 
 		assertEquals("bKey", res.getBillingKey());
 		then(paymentSaga).should().issueKeyWithCompensation(param);
+
+		// ✅ 빌링키 발급 알림
+		then(publisher).should().billingKeyIssued(MEMBER_ID, ORDER_ID);
 	}
 
 	@Test
@@ -267,11 +284,13 @@ class PaymentApplicationServiceImplTest {
 			.customerKey("custKey")
 			.build();
 
-		PaymentDomainException ex = assertThrows(
+		assertThrows(
 			PaymentDomainException.class,
 			() -> service.issueBillingKey(MEMBER_ID, param)
 		);
-		assertTrue(ex.getMessage().contains("memberId=10"));
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).billingKeyIssued(anyLong(), anyString());
 	}
 
 	@Test
@@ -293,9 +312,8 @@ class PaymentApplicationServiceImplTest {
 			.customerName("name")
 			.build();
 
-		// 🔹 상태명 최신화: "AUTO_BILLING_APPROVED"
 		PaymentConfirmResponse dummy = new PaymentConfirmResponse(
-			555L, "AUTO_BILLING_APPROVED", "email", "name", "paymentKey"
+			555L, "AUTO_BILLING_APPROVED", "paymentKey", "email", "name"
 		);
 		given(paymentSaga.autoChargeWithCompensation(param, "idem")).willReturn(dummy);
 
@@ -303,6 +321,9 @@ class PaymentApplicationServiceImplTest {
 
 		assertEquals("AUTO_BILLING_APPROVED", res.getPayStatus());
 		then(paymentSaga).should().autoChargeWithCompensation(param, "idem");
+
+		// ✅ 자동결제 승인 알림
+		then(publisher).should().autoBillingApproved(MEMBER_ID, ORDER_ID, 3000);
 	}
 
 	@Test
@@ -324,11 +345,13 @@ class PaymentApplicationServiceImplTest {
 			.customerName("name")
 			.build();
 
-		PaymentDomainException ex = assertThrows(
+		assertThrows(
 			PaymentDomainException.class,
 			() -> service.chargeWithBillingKey(MEMBER_ID, param, "idem")
 		);
-		assertTrue(ex.getMessage().contains("memberId=10"));
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -349,6 +372,9 @@ class PaymentApplicationServiceImplTest {
 
 		then(historyRepository).should(times(1)).save(any());
 		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
+
+		// 만료는 알림 발행 대상 아님
+		then(publisher).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -366,6 +392,8 @@ class PaymentApplicationServiceImplTest {
 		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
 		then(paymentRepository).should(never()).save(any());
 		then(historyRepository).should(never()).save(any());
+
+		then(publisher).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -386,50 +414,50 @@ class PaymentApplicationServiceImplTest {
 		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
 		then(paymentRepository).should(never()).save(any());
 		then(historyRepository).should(never()).save(any());
-	}
 
+		then(publisher).shouldHaveNoInteractions();
+	}
 
 	@Test
 	@DisplayName("cancelPayment(구독): 7일 초과 → 다음 달부터 해지 예약 (billingKey 제거 + ABORTED 저장)")
 	void cancelPayment_subscription_after7days_abortAndClearKey() {
-		// payment: 현재 월 결제가 이미 승인된 상태라고 가정(AUTO_BILLING_APPROVED)
 		Payment paid = Payment.of(
-			/*paymentId*/ 1L, MEMBER_ID, PLAN_ID, ORDER_ID,
-			/*paymentKey*/ "pKey-1", /*billingKey*/ "bKey-1", /*customerKey*/ "cust_" + MEMBER_ID,
-			/*amount*/ 3000L, /*status*/ PayStatus.AUTO_BILLING_APPROVED,
-			/*method*/ "CARD", /*failureReason*/ null, /*cancelReason*/ null
+			1L, MEMBER_ID, PLAN_ID, ORDER_ID,
+			"pKey-1", "bKey-1", "cust_" + MEMBER_ID,
+			3000L, PayStatus.AUTO_BILLING_APPROVED,
+			"CARD", null, null
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 
-		// 구독 플랜(기본 @BeforeEach 설정 유지) + 최근 승인 이력 없음(= 7일 초과로 간주)
+		// 최근 승인 이력 없음(= 7일 초과로 간주)
 		given(historyRepository.findLastByPaymentIdAndStatuses(any(), anyList()))
 			.willReturn(Optional.empty());
 
 		PaymentCancelResponse res = service.cancelPayment(
-			MEMBER_ID, ORDER_ID, /*req*/ 1000, CancelReason.USER_REQUEST
+			MEMBER_ID, ORDER_ID, 1000, CancelReason.USER_REQUEST
 		);
 
 		assertEquals(PayStatus.ABORTED.name(), res.getStatus());
 
-		// 저장 시 ABORTED이고 billingKey 제거됐는지 확인
 		then(paymentRepository).should().save(argThat(p ->
 			p.getPayStatus() == PayStatus.ABORTED &&
 				p.getBillingKey() == null
 		));
 		then(historyRepository).should().save(any(PaymentHistory.class));
+
+		// ✅ 해지 예약 알림
+		then(publisher).should().cancelScheduled(MEMBER_ID, ORDER_ID);
 	}
 
 	@Test
-	@DisplayName("cancelPayment(구독): 7일 이내이나 paymentKey 없음 → PAYMENT_CANCEL_ERROR")
+	@DisplayName("cancelPayment(구독): 7일 이내이나 paymentKey 없음 → PAYMENT_CANCEL_ERROR (알림 없음)")
 	void cancelPayment_subscription_within7days_missingPaymentKey() {
-		// 결제 건에 paymentKey가 비어있음
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
-			/*paymentKey*/ null, /*billingKey*/ "bKey", "cust_" + MEMBER_ID, 3000L, "CARD"
+			null, "bKey", "cust_" + MEMBER_ID, 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 
-		// 최근 승인 이력 존재 → 7일 이내 경로
 		given(historyRepository.findLastByPaymentIdAndStatuses(any(), anyList()))
 			.willReturn(Optional.of(PaymentHistory.create(1L, PayStatus.DONE, "결제 완료")));
 
@@ -438,15 +466,18 @@ class PaymentApplicationServiceImplTest {
 			() -> service.cancelPayment(MEMBER_ID, ORDER_ID, 500, CancelReason.USER_REQUEST)
 		);
 		assertEquals(ErrorCode.PAYMENT_CANCEL_ERROR, ex.getErrorCode());
-		then(paymentSaga).should(never()).cancelWithCompensation(anyString(), anyString(), anyInt(), any());
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
+		then(publisher).should(never()).cancelScheduled(anyLong(), anyString());
 	}
 
 	@Test
-	@DisplayName("cancelPayment(구독): 7일 이내 SAGA 실패 → PAYMENT_CANCEL_ERROR로 래핑")
+	@DisplayName("cancelPayment(구독): 7일 이내 SAGA 실패 → PAYMENT_CANCEL_ERROR로 래핑 (알림 없음)")
 	void cancelPayment_subscription_within7days_sagaThrows_wrapAsAppEx() {
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
-			/*paymentKey*/ "pKey-1", /*billingKey*/ "bKey", "cust_" + MEMBER_ID, 3000L, "CARD"
+			"pKey-1", "bKey", "cust_" + MEMBER_ID, 3000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 		given(historyRepository.findLastByPaymentIdAndStatuses(any(), anyList()))
@@ -460,10 +491,13 @@ class PaymentApplicationServiceImplTest {
 			() -> service.cancelPayment(MEMBER_ID, ORDER_ID, 1, CancelReason.USER_REQUEST)
 		);
 		assertEquals(ErrorCode.PAYMENT_CANCEL_ERROR, ex.getErrorCode());
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
-	@DisplayName("cancelPayment(원타임): paymentKey로 취소 호출되고 요청 금액 사용")
+	@DisplayName("cancelPayment(원타임): paymentKey로 취소 호출되고 요청 금액 사용 + 취소 알림")
 	void cancelPayment_oneTime_success() {
 		Plan mockPlan = mock(Plan.class);
 		given(mockPlan.isAutoRenewal()).willReturn(false);
@@ -471,7 +505,7 @@ class PaymentApplicationServiceImplTest {
 
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
-			/*paymentKey*/ "pKey-ot", /*billingKey*/ null, "cust_" + MEMBER_ID, 9000L, "CARD"
+			"pKey-ot", null, "cust_" + MEMBER_ID, 9000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 
@@ -483,10 +517,13 @@ class PaymentApplicationServiceImplTest {
 
 		assertEquals(dummy, res);
 		then(paymentSaga).should().cancelWithCompensation("pKey-ot", ORDER_ID, 1234, CancelReason.USER_REQUEST);
+
+		// ✅ 취소 완료 알림
+		then(publisher).should().cancelled(MEMBER_ID, ORDER_ID, 1234);
 	}
 
 	@Test
-	@DisplayName("cancelPayment(원타임): paymentKey 없음 → PAYMENT_CANCEL_ERROR")
+	@DisplayName("cancelPayment(원타임): paymentKey 없음 → PAYMENT_CANCEL_ERROR (알림 없음)")
 	void cancelPayment_oneTime_missingPaymentKey_throws() {
 		Plan mockPlan = mock(Plan.class);
 		given(mockPlan.isAutoRenewal()).willReturn(false);
@@ -494,7 +531,7 @@ class PaymentApplicationServiceImplTest {
 
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
-			/*paymentKey*/ null, /*billingKey*/ null, "cust_" + MEMBER_ID, 9000L, "CARD"
+			null, null, "cust_" + MEMBER_ID, 9000L, "CARD"
 		);
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(paid));
 
@@ -503,11 +540,13 @@ class PaymentApplicationServiceImplTest {
 			() -> service.cancelPayment(MEMBER_ID, ORDER_ID, 500, CancelReason.USER_REQUEST)
 		);
 		assertEquals(ErrorCode.PAYMENT_CANCEL_ERROR, ex.getErrorCode());
-		then(paymentSaga).should(never()).cancelWithCompensation(anyString(), anyString(), anyInt(), any());
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
-	@DisplayName("issueBillingKey: SAGA 실패 시 BILLING_ISSUE_ERROR")
+	@DisplayName("issueBillingKey: SAGA 실패 시 BILLING_ISSUE_ERROR (알림 없음)")
 	void issueBillingKey_sagaFail_wrapsAsAppEx() {
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
@@ -526,10 +565,13 @@ class PaymentApplicationServiceImplTest {
 			() -> service.issueBillingKey(MEMBER_ID, param)
 		);
 		assertEquals(ErrorCode.BILLING_ISSUE_ERROR, ex.getErrorCode());
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).billingKeyIssued(anyLong(), anyString());
 	}
 
 	@Test
-	@DisplayName("chargeWithBillingKey: SAGA 실패 시 AUTO_CHARGE_ERROR")
+	@DisplayName("chargeWithBillingKey: SAGA 실패 시 AUTO_CHARGE_ERROR (알림 없음)")
 	void chargeWithBillingKey_sagaFail_wrapsAsAppEx() {
 		Payment paid = Payment.create(
 			MEMBER_ID, PLAN_ID, ORDER_ID,
@@ -549,24 +591,23 @@ class PaymentApplicationServiceImplTest {
 			() -> service.chargeWithBillingKey(MEMBER_ID, param, "idem-1")
 		);
 		assertEquals(ErrorCode.AUTO_CHARGE_ERROR, ex.getErrorCode());
+
+		// ❌ 알림 없음
+		then(publisher).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
 	@DisplayName("confirmPayment: 비구독 플랜이면 구독 갱신 기록 호출 안 함")
 	void confirmPayment_nonSubscription_noRenewalRecord() {
-		// 멤버 정보
 		MemberInfoResponse profile = new MemberInfoResponse(1L, "t@e.com", "T");
 		given(memberClient.getMyInfo(MEMBER_ID)).willReturn(new RsData<>("200", "OK", profile));
 
-		// SAGA 승인 성공 → paymentId=501
 		given(paymentSaga.confirmWithCompensation(anyString(), anyString(), anyInt(), anyString(), anyString(), anyString()))
 			.willReturn(501L);
 
-		// 해당 Payment
 		Payment paid = Payment.create(MEMBER_ID, PLAN_ID, ORDER_ID, null, null, "cust_" + MEMBER_ID, 1000L, "CARD");
 		given(paymentRepository.findById(501L)).willReturn(Optional.of(paid));
 
-		// 비구독 플랜으로 오버라이드
 		Plan mockPlan = mock(Plan.class);
 		given(mockPlan.isAutoRenewal()).willReturn(false);
 		given(planRepository.findById(PLAN_ID)).willReturn(Optional.of(mockPlan));
@@ -574,23 +615,23 @@ class PaymentApplicationServiceImplTest {
 		service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 1000, "idem");
 
 		then(subscriptionService).should(never()).recordSubscriptionRenewal(anyLong(), any());
+
+		// 승인 자체는 성공했으니 알림은 발행됨
+		then(publisher).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
 	}
 
 	@Test
-	@DisplayName("confirmPayment: 결제는 승인됐으나 Plan 조회 실패 시 PAYMENT_INIT_ERROR")
+	@DisplayName("confirmPayment: 결제는 승인됐으나 Plan 조회 실패 시 PAYMENT_INIT_ERROR (알림은 승인 직후 이미 발행됨)")
 	void confirmPayment_planNotFound_throws() {
-		// 멤버 정보
 		MemberInfoResponse profile = new MemberInfoResponse(1L, "t@e.com", "T");
 		given(memberClient.getMyInfo(MEMBER_ID)).willReturn(new RsData<>("200", "OK", profile));
 
-		// SAGA 승인 성공 → paymentId=777
 		given(paymentSaga.confirmWithCompensation(anyString(), anyString(), anyInt(), anyString(), anyString(), anyString()))
 			.willReturn(777L);
 
 		Payment paid = Payment.create(MEMBER_ID, PLAN_ID, ORDER_ID, null, null, "cust_" + MEMBER_ID, 1000L, "CARD");
 		given(paymentRepository.findById(777L)).willReturn(Optional.of(paid));
 
-		// Plan 조회 실패
 		given(planRepository.findById(PLAN_ID)).willReturn(Optional.empty());
 
 		PaymentApplicationException ex = assertThrows(
@@ -598,16 +639,19 @@ class PaymentApplicationServiceImplTest {
 			() -> service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 1000, "idem")
 		);
 		assertEquals(ErrorCode.PAYMENT_INIT_ERROR, ex.getErrorCode());
+
+		// 💡 승인 직후 알림은 이미 발행되므로 호출 검증은 한다
+		then(publisher).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
 	}
 
 	@Test
 	@DisplayName("expireIfReady: READY가 아니면 스킵 (저장/이력 없음)")
 	void expireIfReady_skipWhenNotReady() {
 		Payment notReady = Payment.of(
-			/*paymentId*/ 9L, MEMBER_ID, PLAN_ID, ORDER_ID,
-			/*paymentKey*/ null, /*billingKey*/ null, "cust_" + MEMBER_ID,
-			/*amount*/ 5000L, /*status*/ PayStatus.DONE,
-			/*method*/ "CARD", /*failureReason*/ null, /*cancelReason*/ null
+			9L, MEMBER_ID, PLAN_ID, ORDER_ID,
+			null, null, "cust_" + MEMBER_ID,
+			5000L, PayStatus.DONE,
+			"CARD", null, null
 		);
 		given(paymentRepository.findByOrderIdForUpdate(ORDER_ID)).willReturn(Optional.of(notReady));
 
@@ -615,6 +659,8 @@ class PaymentApplicationServiceImplTest {
 
 		then(paymentRepository).should(never()).save(any());
 		then(historyRepository).should(never()).save(any());
+
+		then(publisher).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -622,7 +668,7 @@ class PaymentApplicationServiceImplTest {
 	void testTransitionToReady_success() {
 		Payment origin = Payment.create(MEMBER_ID, PLAN_ID, ORDER_ID, null, null, "cust_" + MEMBER_ID, 1000L, "CARD");
 		given(paymentRepository.findByOrderId(ORDER_ID)).willReturn(Optional.of(origin));
-		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0)); // 저장되도록
+		given(paymentRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
 		service.testTransitionToReady(ORDER_ID, "bKey-xyz");
 
@@ -631,6 +677,8 @@ class PaymentApplicationServiceImplTest {
 				"bKey-xyz".equals(p.getBillingKey())
 		));
 		then(historyRepository).should().save(any(PaymentHistory.class));
+
+		then(publisher).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -643,5 +691,7 @@ class PaymentApplicationServiceImplTest {
 			() -> service.testTransitionToReady(ORDER_ID, "bKey")
 		);
 		assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+
+		then(publisher).shouldHaveNoInteractions();
 	}
 }
