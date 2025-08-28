@@ -9,7 +9,7 @@ import com.grow.payment_service.global.dto.RsData;
 
 @FeignClient(
 	name = "member-service",
-	url  = "${clients.member.base-url:http://localhost:8080}",
+	url  = "${clients.member.base-url:http://localhost:8081}",
 	path = "/internal/members"
 )
 public interface MemberClient {

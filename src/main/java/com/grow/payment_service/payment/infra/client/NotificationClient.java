@@ -8,7 +8,7 @@ import com.grow.payment_service.global.dto.RsData;
 
 @FeignClient(
 	name = "notification-service",
-	url  = "${clients.notification.base-url:http://localhost:8082}",
+	url  = "${clients.notification.base-url:http://localhost:8084}",
 	path = "/notifications"
 )
 public interface NotificationClient {
