@@ -10,7 +10,7 @@ import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.*;
-import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
+import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
@@ -44,7 +44,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	private final PaymentSagaOrchestrator paymentSaga;
 	private final SubscriptionHistoryApplicationService subscriptionService;
 	private final MemberClient memberClient;
-	private final PaymentNotificationPublisher publisher;
+	private final PaymentNotificationProducer notificationProducer;
+
 
 	/**
 	 * 주문 DB 생성 후 클라이언트에게 데이터 반환
@@ -150,7 +151,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			memberId, paymentId);
 
 		// 결제 승인 알림
-		publisher.paymentApproved(memberId, orderId, amount);
+		notificationProducer.paymentApproved(memberId, orderId, amount);
 
 		// [4/4] 구독 플랜 갱신 처리
 		log.info("[4/4] Plan 조회 → planId={}", paid.getPlanId());
@@ -232,7 +233,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 						paymentKey, orderId);
 
 					// 결제 취소 알림
-					publisher.cancelled(memberId, orderId, fullAmount);
+					notificationProducer.cancelled(memberId, orderId, fullAmount);
 
 					return res;
 				} catch (Exception ex) {
@@ -263,7 +264,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 					);
 
 					// 7일 초과 결제 취소 알림
-					publisher.cancelScheduled(memberId, orderId);
+					notificationProducer.cancelScheduled(memberId, orderId);
 
 					return new PaymentCancelResponse(
 						toSave.getPaymentId(),
@@ -294,7 +295,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				paymentKey, orderId);
 
 			// 결제 취소 알림
-			publisher.cancelled(memberId, orderId, cancelAmount);
+			notificationProducer.cancelled(memberId, orderId, cancelAmount);
+
 
 			return res;
 		} catch (Exception ex) {
@@ -338,7 +340,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				param.getOrderId(), res.getBillingKey());
 
 			// 자동결제 승인 알림
-			publisher.billingKeyIssued(memberId, param.getOrderId());
+			notificationProducer.billingKeyIssued(memberId, param.getOrderId());
 
 			return res;
 		} catch (Exception ex) {
@@ -383,7 +385,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			log.info("[2/3] SAGA 자동결제 완료 → paymentId={}", res.getPaymentId());
 
 			// 자동결제 승인 알림
-			publisher.autoBillingApproved(memberId, param.getOrderId(), param.getAmount());
+			notificationProducer.autoBillingApproved(memberId, param.getOrderId(), param.getAmount());
 
 			// [3/3] 결과 반환
 			log.info("[3/3] 자동결제 응답 반환 → paymentId={}", res.getPaymentId());
