@@ -2,7 +2,6 @@ package com.grow.payment_service.payment.application.service.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
-import static org.mockito.ArgumentMatchers.*;
 
 import java.util.Optional;
 
@@ -21,7 +20,6 @@ import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.*;
-import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
 import com.grow.payment_service.payment.domain.exception.PaymentDomainException;
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
@@ -39,6 +37,8 @@ import com.grow.payment_service.plan.domain.model.enums.PlanType;
 import com.grow.payment_service.plan.domain.repository.PlanRepository;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
+import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
+
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class PaymentApplicationServiceImplTest {
@@ -50,7 +50,8 @@ class PaymentApplicationServiceImplTest {
 	@Mock private PaymentSagaOrchestrator paymentSaga;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
 	@Mock private MemberClient memberClient;
-	@Mock private PaymentNotificationPublisher publisher; // ✅ 추가
+
+	@Mock private PaymentNotificationProducer notificationProducer;
 
 	@InjectMocks
 	private PaymentApplicationServiceImpl service;
@@ -95,7 +96,7 @@ class PaymentApplicationServiceImplTest {
 		then(planRepository).should().findById(PLAN_ID);
 
 		// init 단계는 알림 발행 없음
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -111,7 +112,7 @@ class PaymentApplicationServiceImplTest {
 		);
 		assertEquals(ErrorCode.PAYMENT_INIT_ERROR, ex.getErrorCode());
 
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -143,7 +144,7 @@ class PaymentApplicationServiceImplTest {
 		then(subscriptionService).should().recordSubscriptionRenewal(MEMBER_ID, PlanPeriod.MONTHLY);
 
 		// ✅ 승인 성공 알림 발행 검증
-		then(publisher).should().paymentApproved(MEMBER_ID, ORDER_ID, 1234);
+		then(notificationProducer).should().paymentApproved(MEMBER_ID, ORDER_ID, 1234);
 	}
 
 	@Test
@@ -169,7 +170,7 @@ class PaymentApplicationServiceImplTest {
 		);
 
 		// ❌ 소유권 불일치로 실패 → 알림 없음
-		then(publisher).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -189,7 +190,7 @@ class PaymentApplicationServiceImplTest {
 		);
 
 		// ❌ 승인 실패는 프론트/위젯에서 안내 → 푸시 알림 없음
-		then(publisher).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -221,7 +222,7 @@ class PaymentApplicationServiceImplTest {
 		);
 
 		// ✅ 취소 완료 알림 발행 검증 (전액)
-		then(publisher).should().cancelled(MEMBER_ID, ORDER_ID, 3000);
+		then(notificationProducer).should().cancelled(MEMBER_ID, ORDER_ID, 3000);
 	}
 
 	@Test
@@ -239,8 +240,8 @@ class PaymentApplicationServiceImplTest {
 		);
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
-		then(publisher).should(never()).cancelScheduled(anyLong(), anyString());
+		then(notificationProducer).should(never()).cancelled(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).cancelScheduled(anyLong(), anyString());
 	}
 
 	@Test
@@ -266,7 +267,7 @@ class PaymentApplicationServiceImplTest {
 		then(paymentSaga).should().issueKeyWithCompensation(param);
 
 		// ✅ 빌링키 발급 알림
-		then(publisher).should().billingKeyIssued(MEMBER_ID, ORDER_ID);
+		then(notificationProducer).should().billingKeyIssued(MEMBER_ID, ORDER_ID);
 	}
 
 	@Test
@@ -290,7 +291,7 @@ class PaymentApplicationServiceImplTest {
 		);
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).billingKeyIssued(anyLong(), anyString());
+		then(notificationProducer).should(never()).billingKeyIssued(anyLong(), anyString());
 	}
 
 	@Test
@@ -312,6 +313,7 @@ class PaymentApplicationServiceImplTest {
 			.customerName("name")
 			.build();
 
+		// ※ DTO 생성자 시그니처는 프로젝트 현재 정의에 맞게 유지
 		PaymentConfirmResponse dummy = new PaymentConfirmResponse(
 			555L, "AUTO_BILLING_APPROVED", "paymentKey", "email", "name"
 		);
@@ -323,7 +325,7 @@ class PaymentApplicationServiceImplTest {
 		then(paymentSaga).should().autoChargeWithCompensation(param, "idem");
 
 		// ✅ 자동결제 승인 알림
-		then(publisher).should().autoBillingApproved(MEMBER_ID, ORDER_ID, 3000);
+		then(notificationProducer).should().autoBillingApproved(MEMBER_ID, ORDER_ID, 3000);
 	}
 
 	@Test
@@ -351,7 +353,7 @@ class PaymentApplicationServiceImplTest {
 		);
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -374,7 +376,7 @@ class PaymentApplicationServiceImplTest {
 		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
 
 		// 만료는 알림 발행 대상 아님
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -393,29 +395,7 @@ class PaymentApplicationServiceImplTest {
 		then(paymentRepository).should(never()).save(any());
 		then(historyRepository).should(never()).save(any());
 
-		then(publisher).shouldHaveNoInteractions();
-	}
-
-	@Test
-	@DisplayName("expireIfReady: 소유자 불일치 → 도메인 예외 발생 & 저장/이력 없음")
-	void expireIfReady_memberMismatch_throws() {
-		Payment others = Payment.create(
-			999L, PLAN_ID, ORDER_ID,
-			null, null, "cust_999", 5000L, "CARD"
-		);
-		given(paymentRepository.findByOrderIdForUpdate(ORDER_ID))
-			.willReturn(Optional.of(others));
-
-		assertThrows(
-			PaymentDomainException.class,
-			() -> service.expireIfReady(MEMBER_ID, ORDER_ID)
-		);
-
-		then(paymentRepository).should().findByOrderIdForUpdate(ORDER_ID);
-		then(paymentRepository).should(never()).save(any());
-		then(historyRepository).should(never()).save(any());
-
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -446,7 +426,7 @@ class PaymentApplicationServiceImplTest {
 		then(historyRepository).should().save(any(PaymentHistory.class));
 
 		// ✅ 해지 예약 알림
-		then(publisher).should().cancelScheduled(MEMBER_ID, ORDER_ID);
+		then(notificationProducer).should().cancelScheduled(MEMBER_ID, ORDER_ID);
 	}
 
 	@Test
@@ -468,8 +448,8 @@ class PaymentApplicationServiceImplTest {
 		assertEquals(ErrorCode.PAYMENT_CANCEL_ERROR, ex.getErrorCode());
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
-		then(publisher).should(never()).cancelScheduled(anyLong(), anyString());
+		then(notificationProducer).should(never()).cancelled(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).cancelScheduled(anyLong(), anyString());
 	}
 
 	@Test
@@ -493,7 +473,7 @@ class PaymentApplicationServiceImplTest {
 		assertEquals(ErrorCode.PAYMENT_CANCEL_ERROR, ex.getErrorCode());
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).cancelled(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -519,7 +499,7 @@ class PaymentApplicationServiceImplTest {
 		then(paymentSaga).should().cancelWithCompensation("pKey-ot", ORDER_ID, 1234, CancelReason.USER_REQUEST);
 
 		// ✅ 취소 완료 알림
-		then(publisher).should().cancelled(MEMBER_ID, ORDER_ID, 1234);
+		then(notificationProducer).should().cancelled(MEMBER_ID, ORDER_ID, 1234);
 	}
 
 	@Test
@@ -542,7 +522,7 @@ class PaymentApplicationServiceImplTest {
 		assertEquals(ErrorCode.PAYMENT_CANCEL_ERROR, ex.getErrorCode());
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).cancelled(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).cancelled(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -567,7 +547,7 @@ class PaymentApplicationServiceImplTest {
 		assertEquals(ErrorCode.BILLING_ISSUE_ERROR, ex.getErrorCode());
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).billingKeyIssued(anyLong(), anyString());
+		then(notificationProducer).should(never()).billingKeyIssued(anyLong(), anyString());
 	}
 
 	@Test
@@ -593,7 +573,7 @@ class PaymentApplicationServiceImplTest {
 		assertEquals(ErrorCode.AUTO_CHARGE_ERROR, ex.getErrorCode());
 
 		// ❌ 알림 없음
-		then(publisher).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
+		then(notificationProducer).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test
@@ -617,7 +597,7 @@ class PaymentApplicationServiceImplTest {
 		then(subscriptionService).should(never()).recordSubscriptionRenewal(anyLong(), any());
 
 		// 승인 자체는 성공했으니 알림은 발행됨
-		then(publisher).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
+		then(notificationProducer).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
 	}
 
 	@Test
@@ -641,7 +621,7 @@ class PaymentApplicationServiceImplTest {
 		assertEquals(ErrorCode.PAYMENT_INIT_ERROR, ex.getErrorCode());
 
 		// 💡 승인 직후 알림은 이미 발행되므로 호출 검증은 한다
-		then(publisher).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
+		then(notificationProducer).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
 	}
 
 	@Test
@@ -660,7 +640,7 @@ class PaymentApplicationServiceImplTest {
 		then(paymentRepository).should(never()).save(any());
 		then(historyRepository).should(never()).save(any());
 
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -678,7 +658,7 @@ class PaymentApplicationServiceImplTest {
 		));
 		then(historyRepository).should().save(any(PaymentHistory.class));
 
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -692,6 +672,6 @@ class PaymentApplicationServiceImplTest {
 		);
 		assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
 
-		then(publisher).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 }

@@ -3,9 +3,6 @@ package com.grow.payment_service.payment.application.service.impl;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
-
-import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -15,7 +12,8 @@ import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
-import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
+import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
+
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.model.PaymentHistory;
 import com.grow.payment_service.payment.domain.model.enums.PayStatus;
@@ -43,7 +41,8 @@ class PaymentBatchServiceImplTest {
 	@Mock private RedisIdempotencyAdapter idempotencyAdapter;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
 	@Mock private MemberClient memberClient;
-	@Mock private PaymentNotificationPublisher publisher;
+
+	@Mock private PaymentNotificationProducer notificationProducer;
 
 	@InjectMocks
 	private PaymentBatchServiceImpl batchService;
@@ -76,8 +75,7 @@ class PaymentBatchServiceImplTest {
 			updated.getBillingKey() == null &&
 				updated.getPayStatus() == PayStatus.ABORTED
 		));
-		then(historyRepository).should()
-			.save(any(PaymentHistory.class));
+		then(historyRepository).should().save(any(PaymentHistory.class));
 	}
 
 	@Test
@@ -90,6 +88,7 @@ class PaymentBatchServiceImplTest {
 
 		then(paymentRepository).should().findAllByPayStatusAndBillingKeyIsNotNull(PayStatus.AUTO_BILLING_IN_PROGRESS);
 		then(historyRepository).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions();
 	}
 
 	@Test
@@ -113,8 +112,8 @@ class PaymentBatchServiceImplTest {
 		));
 		// 히스토리 기록
 		then(historyRepository).should().save(any(PaymentHistory.class));
-		//  자동결제 실패 알림 전송 검증
-		then(publisher).should().autoBillingFailed(
+
+		then(notificationProducer).should().autoBillingFailed(
 			eq(p.getMemberId()),
 			eq(p.getOrderId()),
 			eq(p.getTotalAmount().intValue())
@@ -138,6 +137,7 @@ class PaymentBatchServiceImplTest {
 
 		then(paymentService).shouldHaveNoInteractions();
 		then(historyRepository).shouldHaveNoInteractions();
+		then(notificationProducer).shouldHaveNoInteractions(); // 실패 알림도 없음
 	}
 
 	@Test
@@ -176,7 +176,7 @@ class PaymentBatchServiceImplTest {
 		// 실행
 		batchService.processSingleAutoCharge(5L);
 
-		// 검증: state transitions 저장
+		// 검증: state transitions 저장 (IN_PROGRESS, APPROVED, READY)
 		then(paymentRepository).should(times(3)).save(any(Payment.class));
 		then(historyRepository).should(times(3)).save(any(PaymentHistory.class));
 
@@ -189,6 +189,9 @@ class PaymentBatchServiceImplTest {
 		PaymentAutoChargeParam used = captor.getValue();
 		assertEquals("foo@ex.com", used.getCustomerEmail());
 		assertEquals("FooNick",    used.getCustomerName());
+
+		// 승인 알림은 ApplicationService 내부에서 처리되므로 여기선 호출 없음
+		then(notificationProducer).should(never()).autoBillingApproved(anyLong(), anyString(), anyInt());
 	}
 
 	@Test

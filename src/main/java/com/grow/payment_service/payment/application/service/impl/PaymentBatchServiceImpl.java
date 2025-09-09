@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
-import com.grow.payment_service.payment.application.event.PaymentNotificationPublisher;
+import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
 import com.grow.payment_service.payment.application.service.PaymentBatchService;
 import com.grow.payment_service.payment.domain.model.Payment;
@@ -40,7 +40,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final RedisIdempotencyAdapter idempotencyAdapter;
 	private final SubscriptionHistoryApplicationService subscriptionService;
 	private final MemberClient memberClient;
-	private final PaymentNotificationPublisher publisher;
+	private final PaymentNotificationProducer notificationProducer;
 
 	/**
 	 * 특정 회원의 payment 객체에서 빌링키를 제거합니다.
@@ -111,7 +111,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 			);
 
 			// 자동결제 실패 알림
-			publisher.autoBillingFailed(
+			notificationProducer.autoBillingFailed(
 				cleared.getMemberId(),
 				cleared.getOrderId(),
 				cleared.getTotalAmount() == null ? 0 : cleared.getTotalAmount().intValue()
@@ -210,7 +210,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 
 			// 자동결제 실패 알림
-			publisher.autoBillingFailed(
+			notificationProducer.autoBillingFailed(
 				p.getMemberId(),
 				p.getOrderId(),
 				p.getTotalAmount() == null ? 0 : p.getTotalAmount().intValue()
