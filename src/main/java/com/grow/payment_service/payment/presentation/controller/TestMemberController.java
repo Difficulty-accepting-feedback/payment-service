@@ -16,7 +16,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 
 @Hidden
 @RestController
-@RequestMapping("/api/payments/test")
+@RequestMapping("/api/v1/payment/test")
 @RequiredArgsConstructor
 @Tag(name = "Test", description = "테스트용 API")
 public class TestMemberController {

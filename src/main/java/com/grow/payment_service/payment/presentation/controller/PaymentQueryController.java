@@ -17,7 +17,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/payments/query")
+@RequestMapping("/api/v1/payment/query")
 @Tag(name = "Payment Query", description = "결제 조회 API")
 public class PaymentQueryController {
 
