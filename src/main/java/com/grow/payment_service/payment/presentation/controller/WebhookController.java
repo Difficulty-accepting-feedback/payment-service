@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.Hidden;
 
 @Slf4j
 @RestController
-@RequestMapping("/webhooks/tosspayments")
+@RequestMapping("/api/v1/payment/webhooks/tosspayments")
 @RequiredArgsConstructor
 @Hidden
 public class WebhookController {
