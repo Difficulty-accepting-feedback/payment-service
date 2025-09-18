@@ -31,7 +31,7 @@ class SubscriptionHistoryApplicationServiceImplTest {
 	SubscriptionHistoryRepository repository;
 
 	@InjectMocks
-	com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationServiceImpl service;
+	SubscriptionHistoryApplicationServiceImpl service;
 
 	@Test
 	@DisplayName("getMySubscriptionHistories: 이력이 존재하면 DTO 리스트 반환")
