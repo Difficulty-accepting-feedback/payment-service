@@ -2,6 +2,7 @@ package com.grow.payment_service.subscription.infra.persistence.repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -28,4 +29,10 @@ public interface SubscriptionHistoryJpaRepository extends JpaRepository<Subscrip
 		@Param("now")    LocalDateTime now,
 		@Param("period") PlanPeriod period
 	);
+
+	boolean existsByMemberIdAndSubscriptionStatusAndEndAtAfter(
+		Long memberId, SubscriptionStatus status, LocalDateTime endAtExclusive
+	);
+
+	Optional<SubscriptionHistoryJpaEntity> findTopByMemberIdOrderByEndAtDesc(Long memberId);
 }
