@@ -19,7 +19,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/subscriptions")
+@RequestMapping("/api/v1/payment/subscriptions")
 @Tag(name = "Subscription", description = "구독 이력 API")
 public class SubscriptionHistoryController {
 
