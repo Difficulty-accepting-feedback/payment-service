@@ -26,4 +26,7 @@ public interface SubscriptionHistoryApplicationService {
 		LocalDateTime endAt,
 		LocalDateTime changeAt
 	);
+
+	/** AI 리뷰 기능 사용 가능 여부 조회 */
+	boolean canUseAiReview(Long memberId);
 }

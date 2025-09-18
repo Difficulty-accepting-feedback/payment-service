@@ -1,4 +1,4 @@
-package com.grow.payment_service.subscription.application.service;
+package com.grow.payment_service.subscription.application.service.impl;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -15,6 +15,7 @@ import com.grow.payment_service.global.exception.SubscriptionHistoryException;
 import com.grow.payment_service.plan.domain.model.enums.PlanPeriod;
 import com.grow.payment_service.subscription.application.dto.SubscriptionHistoryResponse;
 import com.grow.payment_service.subscription.application.dto.SubscriptionHistorySummary;
+import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 import com.grow.payment_service.subscription.domain.model.SubscriptionHistory;
 import com.grow.payment_service.subscription.domain.repository.SubscriptionHistoryRepository;
 
@@ -106,5 +107,13 @@ public class SubscriptionHistoryApplicationServiceImpl implements SubscriptionHi
 			changeAt
 		);
 		repository.save(expired);
+	}
+
+	/** 현재 시점에 AI 복습 사용 가능(=유효 구독) 여부 */
+	@Override
+	@Transactional(readOnly = true)
+	public boolean canUseAiReview(Long memberId) {
+		LocalDateTime now = LocalDateTime.now();
+		return repository.existsActiveAfter(memberId, now);
 	}
 }
