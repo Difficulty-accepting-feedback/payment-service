@@ -5,6 +5,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.service.EmailService;
 
 import jakarta.mail.internet.MimeMessage;
@@ -17,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 public class EmailServiceImpl implements EmailService {
 
 	private final JavaMailSender mailSender;
+	private final PaymentMetrics metrics;
 
 	@Value("${app.mail.from}")
 	private String fromAddress;
@@ -34,20 +36,27 @@ public class EmailServiceImpl implements EmailService {
 		String approvedAt,
 		String currency
 	) {
-		sendStyledEmail(
-			toEmail, toName,
-			"결제 완료 안내",
-			toName + "님, 결제가 완료되었어요.",
-			builder -> {
-				builder.appendRow("구매상품", "GROW Plan #" + orderId);
-				builder.appendRow("결제금액", String.format("%,d원", amount));
-				builder.appendRow("결제수단", easyPayProvider + " - " + method);
-				builder.appendRow("결제일시", approvedAt.replace('T',' '));
-				builder.appendRow("주문번호", orderId);
-			},
-			receiptUrl
-		);
+		try {
+			sendStyledEmail(
+				toEmail, toName,
+				"결제 완료 안내",
+				toName + "님, 결제가 완료되었어요.",
+				builder -> {
+					builder.appendRow("구매상품", "GROW Plan #" + orderId);
+					builder.appendRow("결제금액", String.format("%,d원", amount));
+					builder.appendRow("결제수단", PaymentMetrics.v(easyPayProvider) + " - " + PaymentMetrics.v(method));
+					builder.appendRow("결제일시", approvedAt.replace('T',' '));
+					builder.appendRow("주문번호", orderId);
+				},
+				receiptUrl
+			);
+			metrics.result("payment_email_send_total","type","success","result","success");
+		} catch (Exception e) {
+			metrics.result("payment_email_send_total","type","success","result","error","exception",e.getClass().getSimpleName());
+			throw e;
+		}
 	}
+
 
 	@Override
 	public void sendPaymentFailure(
@@ -62,19 +71,25 @@ public class EmailServiceImpl implements EmailService {
 		String approvedAt,
 		String currency
 	) {
-		sendStyledEmail(
-			toEmail, toName,
-			"결제 실패 안내",
-			toName + "님, 결제가 실패했습니다.",
-			builder -> {
-				builder.appendRow("구매상품", "GROW Plan #" + orderId);
-				builder.appendRow("시도 금액", String.format("%,d원", amount));
-				builder.appendRow("결제수단", easyPayProvider + " - " + method);
-				builder.appendRow("결제일시", approvedAt.replace('T',' '));
-				builder.appendRow("주문번호", orderId);
-			},
-			receiptUrl
-		);
+		try {
+			sendStyledEmail(
+				toEmail, toName,
+				"결제 실패 안내",
+				toName + "님, 결제가 실패했습니다.",
+				builder -> {
+					builder.appendRow("구매상품", "GROW Plan #" + orderId);
+					builder.appendRow("시도 금액", String.format("%,d원", amount));
+					builder.appendRow("결제수단", PaymentMetrics.v(easyPayProvider) + " - " + PaymentMetrics.v(method));
+					builder.appendRow("결제일시", PaymentMetrics.v(approvedAt).replace('T',' '));
+					builder.appendRow("주문번호", orderId);
+				},
+				receiptUrl
+			);
+			metrics.result("payment_email_send_total","type","failure","result","success");
+		} catch (Exception e) {
+			metrics.result("payment_email_send_total","type","failure","result","error","exception",e.getClass().getSimpleName());
+			throw e;
+		}
 	}
 
 	@Override
@@ -92,20 +107,26 @@ public class EmailServiceImpl implements EmailService {
 		Integer cancelAmount,
 		String currency
 	) {
-		sendStyledEmail(
-			toEmail, toName,
-			"결제 취소 안내",
-			toName + "님, 주문이 취소되었어요.",
-			builder -> {
-				builder.appendRow("구매상품", "GROW Plan #" + orderId);
-				builder.appendRow("취소 금액", String.format("%,d원", cancelAmount));
-				builder.appendRow("취소 사유", cancelReason);
-				builder.appendRow("결제수단", easyPayProvider + " - " + method);
-				builder.appendRow("취소일시", approvedAt.replace('T',' '));
-				builder.appendRow("주문번호", orderId);
-			},
-			receiptUrl
-		);
+		try {
+			sendStyledEmail(
+				toEmail, toName,
+				"결제 취소 안내",
+				toName + "님, 주문이 취소되었어요.",
+				builder -> {
+					builder.appendRow("구매상품", "GROW Plan #" + orderId);
+					builder.appendRow("취소 금액", String.format("%,d원", cancelAmount));
+					builder.appendRow("취소 사유", PaymentMetrics.v(cancelReason));
+					builder.appendRow("결제수단", PaymentMetrics.v(easyPayProvider) + " - " + PaymentMetrics.v(method));
+					builder.appendRow("취소일시", PaymentMetrics.v(approvedAt).replace('T',' '));
+					builder.appendRow("주문번호", orderId);
+				},
+				receiptUrl
+			);
+			metrics.result("payment_email_send_total","type","cancellation","result","success");
+		} catch (Exception e) {
+			metrics.result("payment_email_send_total","type","cancellation","result","error","exception",e.getClass().getSimpleName());
+			throw e;
+		}
 	}
 
 	// 공통 이메일 생성 로직

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.grow.payment_service.global.dto.RsData;
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
@@ -26,6 +27,8 @@ import com.grow.payment_service.payment.infra.client.MemberInfoResponse;
 import com.grow.payment_service.payment.infra.redis.RedisIdempotencyAdapter;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,6 +44,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	private final SubscriptionHistoryApplicationService subscriptionService;
 	private final MemberClient memberClient;
 	private final PaymentNotificationProducer notificationProducer;
+	private final PaymentMetrics metrics;
 
 	/**
 	 * 특정 회원의 payment 객체에서 빌링키를 제거합니다.
@@ -58,15 +62,20 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 		for (Payment p : list) {
 			// 빌링 키가 있는 경우만 처리
 			if (p.getBillingKey() != null) {
+
 				log.info("[빌링키 제거 시작] 결제ID={}, 기존BillingKey={}",
 					p.getPaymentId(), p.getBillingKey());
 
 				try {
+					PayStatus before = p.getPayStatus();
 					// 빌링 키 제거
 					Payment updated = p.clearBillingKey();
 					// 변경된 결제 저장
 					paymentRepository.save(updated);
 					// 히스토리 기록
+					// 상태 전이 기록
+					metrics.transition(before.name(), updated.getPayStatus().name());
+
 					historyRepository.save(
 						PaymentHistory.create(
 							updated.getPaymentId(),
@@ -74,9 +83,11 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 							"빌링키 제거"
 						)
 					);
+					metrics.result("billingkey_remove_total", "result","success");
 					log.info("[빌링키 제거 완료] 결제ID={}, billingKey=null 로 변경",
 						updated.getPaymentId());
 				} catch (Exception ex) {
+					metrics.result("billingkey_remove_total", "result","error", "exception", ex.getClass().getSimpleName());
 					log.error("[빌링키 제거 실패] 결제ID={}, 원인={}",
 						p.getPaymentId(), ex.getMessage(), ex);
 					throw new PaymentApplicationException(
@@ -96,12 +107,17 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 		List<Payment> targets = paymentRepository.findAllByPayStatusAndBillingKeyIsNotNull(
 			PayStatus.AUTO_BILLING_IN_PROGRESS);
 
+		int processed = 0;
+
 		// 각 결제에 대해 실패 상태로 전이
 		for (Payment p : targets) {
+			PayStatus before = p.getPayStatus();
 			Payment failed = p.failAutoBilling(FailureReason.RETRY_EXCEEDED);
 			Payment cleared = failed.clearBillingKey(); // 빌링키 제거
 
 			paymentRepository.save(cleared);
+			// 상태 전이 기록
+			metrics.transition(before.name(), cleared.getPayStatus().name());
 			historyRepository.save(
 				PaymentHistory.create(
 					cleared.getPaymentId(),
@@ -110,6 +126,8 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				)
 			);
 
+			processed++;
+
 			// 자동결제 실패 알림
 			notificationProducer.autoBillingFailed(
 				cleared.getMemberId(),
@@ -117,6 +135,14 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				cleared.getTotalAmount() == null ? 0 : cleared.getTotalAmount().intValue()
 			);
 		}
+
+		// 영구 실패 처리 건수
+		if (processed > 0) {
+			for (int i = 0; i < processed; i++) {
+				metrics.result("autobilling_permanent_fail_total");
+			}
+		}
+
 		log.info("[자동결제] 5회 재시도 후 실패 상태 전이 완료: count={}", targets.size());
 	}
 
@@ -132,6 +158,8 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 	 */
 	@Override
 	@Transactional
+	@Timed("autobilling_job_latency")
+	@Counted("autobilling_job_total")
 	public void processSingleAutoCharge(Long paymentId) {
 		Payment p = paymentRepository.findById(paymentId)
 			.orElseThrow(() -> new PaymentApplicationException(
@@ -149,6 +177,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 
 		try {
 			// READY -> IN_PROGRESS 전이
+			PayStatus beforeStart = p.getPayStatus();
 			Payment inProgress = p.startAutoBilling();
 			paymentRepository.save(inProgress);
 			historyRepository.save(PaymentHistory.create(
@@ -156,6 +185,9 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				inProgress.getPayStatus(),
 				"자동결제 진행 중 상태로 전이"
 			));
+
+			// 상태 전이
+			metrics.transition(beforeStart.name(), inProgress.getPayStatus().name());
 
 			// 회원 서비스 호출 -> 이메일, 닉네임 조회
 			RsData<MemberInfoResponse> memberResp = memberClient.getMyInfo(p.getMemberId());
@@ -188,6 +220,7 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 			}
 
 			// IN_PROGRESS -> APPROVED 전이
+			PayStatus beforeApprove = inProgress.getPayStatus();
 			Payment approved = inProgress.approveAutoBilling(approvedPaymentKey);
 			paymentRepository.save(approved);
 			historyRepository.save(PaymentHistory.create(
@@ -195,8 +228,11 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				approved.getPayStatus(),
 				"자동결제 승인 처리"
 			));
+			// 상태 전이
+			metrics.transition(beforeApprove.name(), approved.getPayStatus().name());
 
 			// APPROVED -> READY 리셋 (다음 달 결제 준비)
+			PayStatus beforeReset = approved.getPayStatus();
 			Payment ready = approved.resetForNextCycle();
 			paymentRepository.save(ready);
 			historyRepository.save(PaymentHistory.create(
@@ -204,10 +240,13 @@ public class PaymentBatchServiceImpl implements PaymentBatchService {
 				ready.getPayStatus(),
 				"다음 달 READY로 전이"
 			));
+			// 상태 전이
+			metrics.transition(beforeReset.name(), ready.getPayStatus().name());
+			metrics.result("autobilling_confirm_total", "result","success");
 
 		} catch (Exception ex) {
 			log.error("[자동결제 실패] paymentId={}, 원인={}", paymentId, ex.getMessage(), ex);
-
+			metrics.result("autobilling_confirm_total", "result","error", "exception", ex.getClass().getSimpleName());
 
 			// 자동결제 실패 알림
 			notificationProducer.autoBillingFailed(
