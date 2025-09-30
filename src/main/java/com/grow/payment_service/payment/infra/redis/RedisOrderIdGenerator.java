@@ -2,17 +2,20 @@ package com.grow.payment_service.payment.infra.redis;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.TimeUnit;
 
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
+@Primary
 @Component
 @RequiredArgsConstructor
 public class RedisOrderIdGenerator implements OrderIdGenerator {
@@ -22,7 +25,7 @@ public class RedisOrderIdGenerator implements OrderIdGenerator {
 	@Override
 	public String generate(Long memberId) {
 		// 현재 날짜를 YYYYMMDD 형식으로 가져오기
-		String date = LocalDate.now().format(DATE_FMT);
+		String date = LocalDate.now(ZoneId.of("Asia/Seoul")).format(DATE_FMT);
 
 		// redis 키 -> orderId:date:memberId
 		String key = "orderId:" + date + ":" + memberId;
@@ -36,7 +39,9 @@ public class RedisOrderIdGenerator implements OrderIdGenerator {
 		}
 		// 4자리로 패딩
 		String padded = String.format("%04d", seq);
+		String id = date + memberId + padded;
 
-		return date + memberId + padded;
+		log.info("[OrderIdGen] Redis generator used -> {}", id);
+		return id;
 	}
 }
