@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.domain.model.Payment;
@@ -25,11 +26,21 @@ import lombok.extern.slf4j.Slf4j;
 public class CompensationTransactionService {
 
 	private final PaymentPersistenceService persistenceService;
+	private final PaymentMetrics metrics;
+
+	private void markComp(String type, Throwable cause) {
+		metrics.result("payment_compensation_total",
+			"type", type,
+			"cause_class", cause == null ? "N/A" : cause.getClass().getSimpleName()
+		);
+	}
+
 
 	/** 결제 승인 저장 실패 보상 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void compensateApprovalFailure(String orderId, Throwable cause) {
 		try {
+			markComp("approval", cause);
 			log.warn("[결제-Comp] 승인 보상: orderId={}, cause={}", orderId, cause.toString());
 			Payment payment = persistenceService.findByOrderId(orderId);
 			Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR);
@@ -48,6 +59,7 @@ public class CompensationTransactionService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public PaymentCancelResponse compensateCancelRequestFailure(String orderId, Throwable cause) {
 		try {
+			markComp("cancel_req", cause);
 			log.warn("[결제-Comp] 취소요청 보상: orderId={}, cause={}", orderId, cause.toString());
 			Payment payment = persistenceService.findByOrderId(orderId);
 			Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR);
@@ -70,6 +82,7 @@ public class CompensationTransactionService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public PaymentCancelResponse compensateCancelCompleteFailure(String orderId, Throwable cause) {
 		try {
+			markComp("cancel_complete", cause);
 			log.warn("[결제-Comp] 취소 완료로 수정: orderId={}, cause={}", orderId, cause.toString());
 			Payment payment = persistenceService.findByOrderId(orderId);
 			if (payment.getPayStatus() == PayStatus.CANCEL_REQUESTED) {
@@ -97,6 +110,7 @@ public class CompensationTransactionService {
 
 	/** 빌링키 발급 저장 실패 (보상 없음, 예외만) */
 	public void compensateIssueKeyFailure(String orderId, String billingKey, Throwable cause) {
+		markComp("issue_key", cause);
 		log.error("[결제-Comp] 빌링키 저장 실패: orderId={}, billingKey={}, cause={}",
 			orderId, billingKey, cause.toString());
 		throw new PaymentSagaException(
@@ -109,6 +123,7 @@ public class CompensationTransactionService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void compensateAutoChargeFailure(String orderId, Throwable cause) {
 		try {
+			markComp("auto_charge", cause);
 			log.warn("[결제-Comp] 자동결제 보상: orderId={}, cause={}", orderId, cause.toString());
 			Payment payment = persistenceService.findByOrderId(orderId);
 			Payment cancelled = payment.forceCancel(CancelReason.SYSTEM_ERROR);
