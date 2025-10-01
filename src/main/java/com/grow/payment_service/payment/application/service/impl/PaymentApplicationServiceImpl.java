@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.*;
 import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
 import com.grow.payment_service.payment.application.service.PaymentApplicationService;
@@ -21,11 +22,14 @@ import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 import com.grow.payment_service.payment.domain.service.OrderIdGenerator;
 import com.grow.payment_service.payment.infra.client.MemberClient;
 import com.grow.payment_service.payment.infra.client.MemberInfoResponse;
+import com.grow.payment_service.payment.infra.redis.RedisOrderIdGenerator;
 import com.grow.payment_service.payment.saga.PaymentSagaOrchestrator;
 import com.grow.payment_service.plan.domain.model.Plan;
 import com.grow.payment_service.plan.domain.repository.PlanRepository;
 import com.grow.payment_service.subscription.application.service.SubscriptionHistoryApplicationService;
 
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,6 +49,7 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	private final SubscriptionHistoryApplicationService subscriptionService;
 	private final MemberClient memberClient;
 	private final PaymentNotificationProducer notificationProducer;
+	private final PaymentMetrics metrics;
 
 
 	/**
@@ -52,6 +57,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 */
 	@Override
 	@Transactional
+	@Timed(value = "payment_init_latency")
+	@Counted(value = "payment_init_total")
 	public PaymentInitResponse initPaymentData(
 		Long memberId, Long planId, int amount
 	) {
@@ -88,6 +95,11 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 					ErrorCode.PAYMENT_INIT_ERROR
 				));
 
+			metrics.result("payment_init_result_total",
+				"result","success",
+				"auto_renewal", plan.isAutoRenewal() ? "true" : "false"
+			);
+
 			return new PaymentInitResponse(
 				orderId,
 				amount,
@@ -99,6 +111,11 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 				plan.getPeriod()
 			);
 		} catch (Exception ex) {
+			metrics.result("payment_init_result_total",
+				"result","error",
+				"exception", ex.getClass().getSimpleName()
+			);
+
 			log.error("주문 생성 실패: memberId={}, planId={}, amount={}",
 				memberId, planId, amount, ex);
 			throw new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR, ex);
@@ -110,6 +127,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 */
 	@Override
 	@Transactional
+	@Timed(value = "payment_confirm_latency")
+	@Counted(value = "payment_confirm_total")
 	public Long confirmPayment(
 		Long memberId,
 		String paymentKey,
@@ -120,52 +139,62 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 		log.info("[결제 승인 요청 시작] memberId={}, orderId={}, amount={}, paymentKey={}",
 			memberId, orderId, amount, paymentKey);
 
-		// [1/4] 멤버 서비스 호출 → 이메일·이름 조회
-		log.info("[1/4] 멤버 서비스 호출 중... memberId={}", memberId);
-		RsData<MemberInfoResponse> rs = memberClient.getMyInfo(memberId);
-		MemberInfoResponse profile = rs.getData();
-		String customerEmail = profile.getEmail();
-		String customerName = profile.getNickname();
-		log.info("[1/4] 멤버 정보 조회 완료 → email={}, nickname={}",
-			customerEmail, customerName);
+		try {
+			// [1/4] 멤버 서비스 호출 → 이메일·이름 조회
+			log.info("[1/4] 멤버 서비스 호출 중... memberId={}", memberId);
+			RsData<MemberInfoResponse> rs = memberClient.getMyInfo(memberId);
+			MemberInfoResponse profile = rs.getData();
+			String customerEmail = profile.getEmail();
+			String customerName = profile.getNickname();
+			log.info("[1/4] 멤버 정보 조회 완료 → email={}, nickname={}",
+				customerEmail, customerName);
 
-		// [2/4] SAGA 결제 승인 호출
-		log.info("[2/4] SAGA 호출 → paymentKey={}, orderId={}, amount={}, idempotencyKey={}, email={}, name={}",
-			paymentKey, orderId, amount, idempotencyKey, customerEmail, customerName);
-		Long paymentId = paymentSaga.confirmWithCompensation(
-			paymentKey,
-			orderId,
-			amount,
-			idempotencyKey,
-			customerEmail,
-			customerName
-		);
-		log.info("[2/4] SAGA 결제 승인 완료 → paymentId={}", paymentId);
+			// [2/4] SAGA 결제 승인 호출
+			log.info("[2/4] SAGA 호출 → paymentKey={}, orderId={}, amount={}, idempotencyKey={}, email={}, name={}",
+				paymentKey, orderId, amount, idempotencyKey, customerEmail, customerName);
+			Long paymentId = paymentSaga.confirmWithCompensation(
+				paymentKey,
+				orderId,
+				amount,
+				idempotencyKey,
+				customerEmail,
+				customerName
+			);
+			log.info("[2/4] SAGA 결제 승인 완료 → paymentId={}", paymentId);
 
-		// [3/4] 주문 조회 & 소유권 검증
-		log.info("[3/4] 주문 조회 및 소유권 검증 → paymentId={}", paymentId);
-		Payment paid = paymentRepository.findById(paymentId)
-			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_NOT_FOUND));
-		paid.verifyOwnership(memberId);
-		log.info("[3/4] 소유권 검증 완료 → memberId={} owns paymentId={}",
-			memberId, paymentId);
+			// [3/4] 주문 조회 & 소유권 검증
+			log.info("[3/4] 주문 조회 및 소유권 검증 → paymentId={}", paymentId);
+			Payment paid = paymentRepository.findById(paymentId)
+				.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_NOT_FOUND));
+			paid.verifyOwnership(memberId);
+			log.info("[3/4] 소유권 검증 완료 → memberId={} owns paymentId={}",
+				memberId, paymentId);
 
-		// 결제 승인 알림
-		notificationProducer.paymentApproved(memberId, orderId, amount);
+			// 결제 승인 알림
+			notificationProducer.paymentApproved(memberId, orderId, amount);
 
-		// [4/4] 구독 플랜 갱신 처리
-		log.info("[4/4] Plan 조회 → planId={}", paid.getPlanId());
-		Plan plan = planRepository.findById(paid.getPlanId())
-			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR));
-		if (plan.isAutoRenewal()) {
-			subscriptionService.recordSubscriptionRenewal(memberId, plan.getPeriod());
-			log.info("[4/4] 구독 갱신 기록 완료 → memberId={}, period={}",
-				memberId, plan.getPeriod());
-		} else {
-			log.info("[4/4] 자동 갱신 대상 아님 (One-time purchase)");
+			// [4/4] 구독 플랜 갱신 처리
+			log.info("[4/4] Plan 조회 → planId={}", paid.getPlanId());
+			Plan plan = planRepository.findById(paid.getPlanId())
+				.orElseThrow(() -> new PaymentApplicationException(ErrorCode.PAYMENT_INIT_ERROR));
+			if (plan.isAutoRenewal()) {
+				subscriptionService.recordSubscriptionRenewal(memberId, plan.getPeriod());
+				log.info("[4/4] 구독 갱신 기록 완료 → memberId={}, period={}",
+					memberId, plan.getPeriod());
+			} else {
+				log.info("[4/4] 자동 갱신 대상 아님 (One-time purchase)");
+			}
+
+			// 결과 메트릭
+			metrics.result("payment_confirm_result_total", "result","success");
+
+			return paymentId;
+		} catch (Exception e) {
+			metrics.result("payment_confirm_result_total", "result","error", "exception", e.getClass().getSimpleName());
+			log.error("[결제 승인 실패] memberId={}, orderId={}, amount={}, paymentKey={}",
+				memberId, orderId, amount, paymentKey, e);
+			throw new PaymentApplicationException(ErrorCode.PAYMENT_CONFIRM_ERROR, e);
 		}
-
-		return paymentId;
 	}
 
 	/**
@@ -235,6 +264,14 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 					// 결제 취소 알림
 					notificationProducer.cancelled(memberId, orderId, fullAmount);
 
+					metrics.result("payment_cancel_result_total",
+						"result","success",
+						"reason", reason.name(),
+						"auto_renewal","true",
+						"within_7d","true"
+					);
+
+
 					return res;
 				} catch (Exception ex) {
 					log.error("결제 취소 실패: paymentKey={}, orderId={}, cancelAmount={}",
@@ -266,11 +303,25 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 					// 7일 초과 결제 취소 알림
 					notificationProducer.cancelScheduled(memberId, orderId);
 
+					metrics.result("payment_cancel_result_total",
+						"result","success",
+						"reason", reason.name(),
+						"auto_renewal","true",
+						"within_7d","false"
+					);
+
 					return new PaymentCancelResponse(
 						toSave.getPaymentId(),
 						toSave.getPayStatus().name()
 					);
 				} catch (Exception ex) {
+					metrics.result("payment_cancel_result_total",
+						"result","error",
+						"reason", reason.name(),
+						"auto_renewal","true",
+						"within_7d","false",
+						"exception", ex.getClass().getSimpleName()
+					);
 					log.error("구독 해지 예약 실패: orderId={}", orderId, ex);
 					throw new PaymentApplicationException(ErrorCode.PAYMENT_CANCEL_ERROR, ex);
 				}
@@ -313,6 +364,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 */
 	@Override
 	@Transactional
+	@Timed(value = "billingkey_issue_latency")
+	@Counted(value = "billingkey_issue_total")
 	public PaymentIssueBillingKeyResponse issueBillingKey(
 		Long memberId,
 		PaymentIssueBillingKeyParam param
@@ -342,8 +395,11 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			// 자동결제 승인 알림
 			notificationProducer.billingKeyIssued(memberId, param.getOrderId());
 
+			metrics.result("billingkey_issue_result_total", "result","success");
+
 			return res;
 		} catch (Exception ex) {
+			metrics.result("billingkey_issue_result_total", "result","error", "exception", ex.getClass().getSimpleName());
 			log.error("빌링키 발급 실패: orderId={}", param.getOrderId(), ex);
 			throw new PaymentApplicationException(
 				ErrorCode.BILLING_ISSUE_ERROR, ex
@@ -356,6 +412,8 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 	 */
 	@Override
 	@Transactional
+	@Timed(value = "autobilling_confirm_latency")
+	@Counted(value = "autobilling_confirm_total")
 	public PaymentConfirmResponse chargeWithBillingKey(
 		Long memberId,
 		PaymentAutoChargeParam param,
@@ -387,10 +445,13 @@ public class PaymentApplicationServiceImpl implements PaymentApplicationService 
 			// 자동결제 승인 알림
 			notificationProducer.autoBillingApproved(memberId, param.getOrderId(), param.getAmount());
 
+			metrics.result("autobilling_confirm_result_total", "result","success");
+
 			// [3/3] 결과 반환
 			log.info("[3/3] 자동결제 응답 반환 → paymentId={}", res.getPaymentId());
 			return res;
 		} catch (Exception ex) {
+			metrics.result("autobilling_confirm_result_total", "result","error", "exception", ex.getClass().getSimpleName());
 			log.error("자동결제 승인 실패: billingKey={}, orderId={}",
 				param.getBillingKey(), param.getOrderId(), ex);
 			throw new PaymentApplicationException(

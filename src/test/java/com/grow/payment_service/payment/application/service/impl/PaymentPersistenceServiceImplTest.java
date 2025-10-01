@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.*;
 import java.util.Optional;
 
 import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
@@ -28,6 +29,7 @@ class PaymentPersistenceServiceImplTest {
 	@Mock PaymentRepository paymentRepository;
 	@Mock PaymentHistoryRepository historyRepository;
 	@InjectMocks PaymentPersistenceServiceImpl service;
+	@Mock private PaymentMetrics metrics;
 
 	private Payment makePayment(PayStatus status) {
 		return Payment.of(

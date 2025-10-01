@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.dto.PaymentIssueBillingKeyResponse;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
@@ -27,6 +28,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 
 	private final PaymentRepository paymentRepository;
 	private final PaymentHistoryRepository historyRepository;
+	private final PaymentMetrics metrics;
 
 	/** 결제 승인 후 DB 저장 */
 	@Override
@@ -40,6 +42,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 			return payment.getPaymentId();
 		}
 
+		PayStatus before = payment.getPayStatus();
 		payment = payment.approve(paymentKey);   // 키 저장 + DONE 전이
 		payment = paymentRepository.save(payment);
 		historyRepository.save(
@@ -49,6 +52,8 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"결제 완료"
 			)
 		);
+		// 상태 전이
+		metrics.transition(before.name(), payment.getPayStatus().name());
 		return payment.getPaymentId();
 	}
 
@@ -68,6 +73,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		}
 
 		// 취소 요청 상태로 전이
+		PayStatus before = payment.getPayStatus();
 		payment = payment.requestCancel(reason);
 		paymentRepository.save(payment);
 		historyRepository.save(
@@ -77,6 +83,8 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"취소 요청"
 			)
 		);
+		// 전이 기록
+		metrics.transition(before.name(), payment.getPayStatus().name());
 		return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
 	}
 
@@ -94,6 +102,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 		}
 
 		// 취소 완료 상태로 전이
+		PayStatus before = payment.getPayStatus();
 		payment = payment.completeCancel();
 		paymentRepository.save(payment);
 		historyRepository.save(
@@ -103,7 +112,8 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"취소 완료"
 			)
 		);
-
+		// 전이 기록
+		metrics.transition(before.name(), payment.getPayStatus().name());
 		return new PaymentCancelResponse(payment.getPaymentId(), payment.getPayStatus().name());
 	}
 
@@ -119,6 +129,7 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
 
 		// 빌링키 등록 상태 전이
+		PayStatus before = payment.getPayStatus();
 		payment = payment.registerBillingKey(billingKey);
 		paymentRepository.save(payment);
 		historyRepository.save(
@@ -128,6 +139,8 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"자동결제 빌링키 등록"
 			)
 		);
+		// 전이 기록
+		metrics.transition(before.name(), payment.getPayStatus().name());
 		return new PaymentIssueBillingKeyResponse(billingKey);
 	}
 
@@ -140,6 +153,9 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 	) {
 		Payment payment = paymentRepository.findByOrderId(orderId)
 			.orElseThrow(() -> new PaymentApplicationException(ErrorCode.ORDER_NOT_FOUND));
+
+		PayStatus before = payment.getPayStatus();
+
 		if ("DONE".equals(tossRes.getStatus())) {
 			//  paymentKey 반영 + 승인 전이
 			payment = payment.approveAutoBilling(tossRes.getPaymentKey());
@@ -162,6 +178,10 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 			);
 		}
 		paymentRepository.save(payment);
+
+		// 전이 기록
+		metrics.transition(before.name(), payment.getPayStatus().name());
+
 		return new PaymentConfirmResponse(
 			payment.getPaymentId(),
 			payment.getPayStatus().name(),
@@ -189,6 +209,8 @@ public class PaymentPersistenceServiceImpl implements PaymentPersistenceService 
 				"보상 트랜잭션에 의한 강제 취소"
 			)
 		);
+		// 전이 기록
+		metrics.transition("unknown", cancelled.getPayStatus().name());
 	}
 
 	@Override

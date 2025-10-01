@@ -41,7 +41,8 @@ def jacocoExcludes = [
 		'**/paymentprovider/**',
 		'**/SubscriptionHistoryInitDataLoader.class',
 		'**/util/**',
-		'**/event/**'
+		'**/event/**',
+		'**/metrics/**'
 ]
 
 jacocoTestCoverageVerification {
@@ -133,6 +134,12 @@ dependencies {
 	// kafka
 	implementation 'org.springframework.kafka:spring-kafka'
 	testImplementation "org.springframework.kafka:spring-kafka-test"
+
+	// 모니터링
+	implementation "org.springframework.boot:spring-boot-starter-actuator"
+	implementation "io.micrometer:micrometer-registry-prometheus"
+	implementation "io.micrometer:micrometer-core"
+	implementation "org.springframework.boot:spring-boot-starter-aop"
 }
 
 tasks.named('test') {

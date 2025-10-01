@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.service.PaymentPersistenceService;
 import com.grow.payment_service.payment.application.dto.PaymentCancelResponse;
 import com.grow.payment_service.payment.domain.model.Payment;
@@ -25,6 +26,8 @@ class CompensationTransactionServiceTest {
 
 	@Mock
 	private PaymentPersistenceService persistenceService;
+
+	@Mock private PaymentMetrics metrics;
 
 	@InjectMocks
 	private CompensationTransactionService service;

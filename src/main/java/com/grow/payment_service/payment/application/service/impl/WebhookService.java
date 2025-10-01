@@ -15,6 +15,8 @@ import com.grow.payment_service.payment.presentation.dto.WebhookRequest.WebhookD
 import com.grow.payment_service.payment.domain.model.Payment;
 import com.grow.payment_service.payment.domain.repository.PaymentRepository;
 
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,6 +33,8 @@ public class WebhookService {
 	 * 결제 완료/실패 웹훅 처리
 	 */
 	@Transactional
+	@Timed("webhook_payment_status_latency")
+	@Counted("webhook_payment_status_calls_total")
 	public void onPaymentStatusChanged(WebhookRequest.WebhookData d) {
 		// 1) 완료 상태가 아니면 무시
 		if (!"DONE".equals(d.getStatus()) && !"FAILED".equals(d.getStatus())) {
@@ -111,6 +115,8 @@ public class WebhookService {
 	 * 결제 취소 완료 웹훅 처리
 	 */
 	@Transactional
+	@Timed("webhook_cancel_status_latency")
+	@Counted("webhook_cancel_status_calls_total")
 	public void onCancelStatusChanged(WebhookRequest.WebhookData d) {
 		// 1) CANCELED 상태가 아니면 무시
 		if (!"CANCELED".equals(d.getStatus())) {

@@ -10,6 +10,7 @@ import java.util.Optional;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.PaymentAutoChargeParam;
 import com.grow.payment_service.payment.application.dto.PaymentConfirmResponse;
 import com.grow.payment_service.payment.application.event.PaymentNotificationProducer;
@@ -41,6 +42,7 @@ class PaymentBatchServiceImplTest {
 	@Mock private RedisIdempotencyAdapter idempotencyAdapter;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
 	@Mock private MemberClient memberClient;
+	@Mock private PaymentMetrics metrics;
 
 	@Mock private PaymentNotificationProducer notificationProducer;
 
