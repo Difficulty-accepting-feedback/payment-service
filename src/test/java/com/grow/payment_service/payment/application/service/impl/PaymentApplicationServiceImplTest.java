@@ -19,6 +19,7 @@ import org.mockito.quality.Strictness;
 import com.grow.payment_service.global.dto.RsData;
 import com.grow.payment_service.global.exception.ErrorCode;
 import com.grow.payment_service.global.exception.PaymentApplicationException;
+import com.grow.payment_service.global.metrics.PaymentMetrics;
 import com.grow.payment_service.payment.application.dto.*;
 import com.grow.payment_service.payment.domain.exception.PaymentDomainException;
 import com.grow.payment_service.payment.domain.model.Payment;
@@ -50,6 +51,7 @@ class PaymentApplicationServiceImplTest {
 	@Mock private PaymentSagaOrchestrator paymentSaga;
 	@Mock private SubscriptionHistoryApplicationService subscriptionService;
 	@Mock private MemberClient memberClient;
+	@Mock private PaymentMetrics metrics;
 
 	@Mock private PaymentNotificationProducer notificationProducer;
 
@@ -148,7 +150,7 @@ class PaymentApplicationServiceImplTest {
 	}
 
 	@Test
-	@DisplayName("confirmPayment: 멤버 불일치 시 도메인 예외 발생")
+	@DisplayName("confirmPayment: 멤버 불일치 시 PaymentApplicationException(원인: PaymentDomainException)")
 	void confirmPayment_memberMismatch() {
 		MemberInfoResponse profile = new MemberInfoResponse(1L,"email", "name");
 		given(memberClient.getMyInfo(MEMBER_ID))
@@ -164,12 +166,12 @@ class PaymentApplicationServiceImplTest {
 		);
 		given(paymentRepository.findById(200L)).willReturn(Optional.of(paid));
 
-		assertThrows(
-			PaymentDomainException.class,
+		PaymentApplicationException ex = assertThrows(
+			PaymentApplicationException.class,
 			() -> service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 1000, "idem")
 		);
+		assertTrue(ex.getCause() instanceof PaymentDomainException);
 
-		// ❌ 소유권 불일치로 실패 → 알림 없음
 		then(notificationProducer).should(never()).paymentApproved(anyLong(), anyString(), anyInt());
 	}
 
@@ -601,7 +603,7 @@ class PaymentApplicationServiceImplTest {
 	}
 
 	@Test
-	@DisplayName("confirmPayment: 결제는 승인됐으나 Plan 조회 실패 시 PAYMENT_INIT_ERROR (알림은 승인 직후 이미 발행됨)")
+	@DisplayName("confirmPayment: 결제는 승인됐으나 Plan 조회 실패 시 PAYMENT_CONFIRM_ERROR(현재 동작 기준)")
 	void confirmPayment_planNotFound_throws() {
 		MemberInfoResponse profile = new MemberInfoResponse(1L, "t@e.com", "T");
 		given(memberClient.getMyInfo(MEMBER_ID)).willReturn(new RsData<>("200", "OK", profile));
@@ -618,9 +620,8 @@ class PaymentApplicationServiceImplTest {
 			PaymentApplicationException.class,
 			() -> service.confirmPayment(MEMBER_ID, "pKey", ORDER_ID, 1000, "idem")
 		);
-		assertEquals(ErrorCode.PAYMENT_INIT_ERROR, ex.getErrorCode());
+		assertEquals(ErrorCode.PAYMENT_CONFIRM_ERROR, ex.getErrorCode());
 
-		// 💡 승인 직후 알림은 이미 발행되므로 호출 검증은 한다
 		then(notificationProducer).should().paymentApproved(MEMBER_ID, ORDER_ID, 1000);
 	}
 

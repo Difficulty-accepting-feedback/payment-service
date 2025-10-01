@@ -18,11 +18,17 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.test.util.ReflectionTestUtils;
 
+// [추가] PaymentMetrics 임포트
+import com.grow.payment_service.global.metrics.PaymentMetrics;
+
 @ExtendWith(MockitoExtension.class)
 class EmailServiceImplTest {
 
 	@Mock
 	JavaMailSender mailSender;
+
+	@Mock
+	PaymentMetrics metrics;
 
 	@InjectMocks
 	EmailServiceImpl service;
@@ -33,7 +39,6 @@ class EmailServiceImplTest {
 
 	@BeforeEach
 	void setUp() {
-		// @Value 주입 필드 셋업
 		ReflectionTestUtils.setField(service, "fromAddress", "no-reply@grow.com");
 	}
 
@@ -73,7 +78,7 @@ class EmailServiceImplTest {
 		assertTrue(html.contains("결제수단"));
 		assertTrue(html.contains("카카오페이 - 간편결제"));
 		assertTrue(html.contains("결제일시"));
-		assertTrue(html.contains("2025-08-09 01:34:02")); // 'T' → ' '
+		assertTrue(html.contains("2025-08-09 01:34:02"));
 		assertTrue(html.contains("주문번호"));
 		assertTrue(html.contains("매출전표 보기"));
 		assertTrue(html.contains(receiptUrl));
@@ -98,7 +103,7 @@ class EmailServiceImplTest {
 		assertTrue(html.contains("시도 금액"));
 		assertTrue(html.contains("12,345원"));
 		assertTrue(html.contains("주문번호"));
-		assertFalse(html.contains("매출전표 보기")); // 링크 없음
+		assertFalse(html.contains("매출전표 보기"));
 	}
 
 	@Test
@@ -134,16 +139,15 @@ class EmailServiceImplTest {
 		when(mailSender.createMimeMessage()).thenReturn(newMessage());
 		ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
 
-		// 구현은 amount/approvedAt에 null 안전하지 않으므로 필수값은 채움
 		service.sendPaymentSuccess(
 			"user@grow.com", "테스터", "OID3",
-			0,               // amount: 0원
-			null,            // receiptUrl: null → 버튼 없음
-			null,            // method
-			null,            // easyPayProvider
-			null,            // requestedAt
-			"2025-01-01T00:00:00", // approvedAt: 필수 (replace 사용)
-			null             // currency
+			0,
+			null,
+			null,
+			null,
+			null,
+			"2025-01-01T00:00:00",
+			null
 		);
 
 		verify(mailSender).send(captor.capture());
@@ -153,6 +157,6 @@ class EmailServiceImplTest {
 		assertTrue(html.contains("주문번호"));
 		assertTrue(html.contains("결제일시"));
 		assertTrue(html.contains("2025-01-01 00:00:00"));
-		assertFalse(html.contains("매출전표 보기")); // receiptUrl=null 이므로 버튼 없음
+		assertFalse(html.contains("매출전표 보기"));
 	}
 }

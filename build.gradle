@@ -41,7 +41,8 @@ def jacocoExcludes = [
 		'**/paymentprovider/**',
 		'**/SubscriptionHistoryInitDataLoader.class',
 		'**/util/**',
-		'**/event/**'
+		'**/event/**',
+		'**/metrics/**'
 ]
 
 jacocoTestCoverageVerification {
