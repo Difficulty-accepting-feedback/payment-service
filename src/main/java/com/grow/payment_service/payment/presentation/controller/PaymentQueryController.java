@@ -27,7 +27,7 @@ public class PaymentQueryController {
 	@GetMapping("/member")
 	public ResponseEntity<RsData<List<PaymentDetailResponse>>> getPaymentsByMember(
 		@Parameter(description = "회원 ID")
-		@RequestHeader Long memberId
+		@RequestHeader("X-Authorization-Id") Long memberId
 	) {
 		List<PaymentDetailResponse> list = paymentQueryService.getPaymentsByMemberId(memberId);
 		return ResponseEntity.ok(new RsData<>("200", "결제 내역 조회 성공", list));
