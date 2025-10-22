@@ -1,7 +1,7 @@
 # MSA: payment service
 ### 자기 계발 및 취미 매칭 웹 애플리케이션, GROW 🌳
 
-**GROW Payment Service**는 플랫폼 전체의 **결제 도메인**을 담당하는 핵심 마이크로서비스입니다.  
+**GROW Payment Service**는 플랫폼 전체의 **결제 도메인**을 담당하는 마이크로서비스입니다.  
 정기결제(자동결제)·일회성 결제·가상계좌·환불/취소·웹훅 검증까지 **엔드투엔드 결제 흐름**을 책임지며,  
 **토스 페이먼츠(Toss Payments)** 외부 API와 연동하여 **안정적 결제 승인/보상 트랜잭션/멱등성**을 보장합니다.  
 결제 이벤트는 멤버·알림 서비스와 Kafka로 연결되어 **포인트/업적/알림**에 반영됩니다.
@@ -128,7 +128,6 @@
 ### CI/CD
 <div>
   <img src="https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white"/>
-  <img src="https://img.shields.io/badge/ArgoCD-EF7B4D?style=for-the-badge&logo=argo&logoColor=white"/>
 </div>
 
 ---
