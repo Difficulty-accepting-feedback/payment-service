@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -14,6 +11,17 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       # 코드 체크아웃
@@ -31,7 +39,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod 777 ./gradlew
 
-        # Gradle 캐시 설정 (빌드 속도 향상)
+      # Gradle 캐시 설정 (빌드 속도 향상)
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
         with:
@@ -42,13 +50,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # 임시 설정 -> 추후 ConfigMap 활용 예정
       - name: create application.yml
-        run: echo "${{ secrets.APPLICATION_PROPERTIES }}" | base64 --decode > src/main/resources/application.yml
+        run: |
+          echo "${{ secrets.APPLICATION_PROPERTIES }}" | base64 --decode > src/main/resources/application.yml
+          echo "${{ secrets.APPLICATION_TEST_PROPERTIES }}" | base64 --decode > src/main/resources/application-test.yml
 
-      # Gradle 빌드 실행 + 테스트를 포함
+      # Gradle 빌드 실행
       - name: Build with Gradle
-        run: ./gradlew clean build --no-daemon -Djava.net.preferIPv4Stack=true -Dspring.profiles.active=ci
+        run: ./gradlew clean build -x test
 
       # 이미지를 만들고 DockerHub 에 Push
       - name: Login to DockerHub
@@ -58,7 +67,53 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker
-        run: docker build --platform linux/amd64 -t ${{ secrets.DOCKERHUB_USERNAME }}/payment-server .
-        
+        run: docker build --platform linux/arm64 -t ${{ secrets.DOCKERHUB_USERNAME }}/grow-payment-server:${{ github.sha }} -t ${{ secrets.DOCKERHUB_USERNAME }}/grow-payment-server:latest .
       - name: Push Docker
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/payment-server:latest
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/grow-payment-server:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/grow-payment-server:latest
+
+      # GitOps manifests 레포 체크아웃 (별도 레포이므로 PAT 사용)
+      - name: Checkout manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: Difficulty-accepting-feedback/k8s-manifests
+          token: ${{ secrets.TOKEN_PAT }}
+          ref: main
+
+      - name: Install Kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: 5.7.0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Kustomization에서 이미지 태그 업데이트 (newTag: github.sha)
+      - name: Update Kustomization image tag
+        run: |
+          cd manifests/payment
+          ls -la
+          if [ ! -f kustomization.yaml ]; then
+            echo "Error: kustomization.yaml not found!"
+            exit 1
+          fi
+          cat kustomization.yaml
+          kustomize edit set image ${{ secrets.DOCKERHUB_USERNAME }}/grow-payment-server=${{ secrets.DOCKERHUB_USERNAME }}/grow-payment-server:${{ github.sha }}
+          cat kustomization.yaml
+        working-directory: ${{ github.workspace }}
+
+      # Git 변경 커밋 및 푸시 (ArgoCD 트리거)
+      - name: Commit and push manifests update
+        run: |
+          cd manifests/payment
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add kustomization.yaml
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "📝 update: image tag 변경 - ${{ github.sha }} for grow-payment-server"
+            git push origin main
+          fi
+        working-directory: ${{ github.workspace }}
+        env:
+          TOKEN_PAT: ${{ secrets.TOKEN_PAT }}  # push를 위한 PAT
